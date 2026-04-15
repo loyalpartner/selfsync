@@ -1,0 +1,19 @@
+[package]
+name = "selfsync-nigori"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes = "0.8"
+base64 = "0.22"
+cbc = { version = "0.1", features = ["alloc"] }
+hmac = "0.12"
+pbkdf2 = "0.12"
+rand = "0.9"
+scrypt = "0.11"
+sha1 = "0.10"
+sha2 = "0.10"
+thiserror = "2"
+
+[dev-dependencies]
+hex = "0.4"
