@@ -129,9 +129,7 @@ selfsync/
 
 ## Prior Art
 
-- [nicktcortes/nicktcortes](https://github.com/nicktcortes/nicktcortes) — Brave's go-sync (DynamoDB + Redis)
-- Chromium's `loopback_server.cc` — Reference sync server in C++
-- [nicktcortes/nicktcortes](https://github.com/nicktcortes/nicktcortes) — Go Nigori implementation
+- Chromium's `components/sync/engine/loopback_server/loopback_server.cc` — Reference sync server implementation
 
 ## License
 
