@@ -55,8 +55,9 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SELFSYNC_ADDR` | `127.0.0.1:8080` | Listen address |
+| `SELFSYNC_ADDR` | `127.0.0.1:8080` | Server listen address |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite database path |
+| `SELFSYNC_UPSTREAM` | Google's sync server | Upstream URL for LD\_PRELOAD proxy |
 | `RUST_LOG` | `selfsync_server=info` | Log level |
 
 When running via Docker, the database defaults to `/data/selfsync.db` and listens on `0.0.0.0:8080`.
@@ -68,10 +69,12 @@ By default, all data goes under a single anonymous user — perfectly fine for p
 For shared servers with multiple users, the server needs to know which Google account each sync request belongs to. Chrome does not send this information on its own, so selfsync uses an LD\_PRELOAD injector to intercept Chrome's sync traffic and tag each request with the user's email.
 
 ```bash
-LD_PRELOAD=./target/release/libselfsync_payload.so google-chrome-stable
+SELFSYNC_UPSTREAM=http://127.0.0.1:8080/chrome-sync \
+LD_PRELOAD=./target/release/libselfsync_payload.so \
+google-chrome-stable
 ```
 
-It hooks into Chrome at startup, reads the local profile data to figure out which Google account is active, and injects the corresponding email header into every sync request.
+The injector hooks into Chrome at startup, reads the local profile data to figure out which Google account is active, and injects the corresponding email header into every sync request. `SELFSYNC_UPSTREAM` tells the proxy where to forward traffic — set it to your selfsync-server instance.
 
 ### Platform Support
 
