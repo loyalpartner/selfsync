@@ -2,7 +2,7 @@ use axum::{Extension, body::Bytes, http::StatusCode, response::IntoResponse};
 use prost::Message;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
-use crate::auth::UserEmail;
+use crate::auth::DEFAULT_EMAIL;
 use crate::db::entity::user;
 use crate::proto::sync_pb;
 use crate::util::gen_encryption_key;
@@ -12,7 +12,6 @@ use super::{commit, get_updates};
 /// POST /command/ — handles all Chrome sync protocol messages.
 pub async fn handle_command(
     Extension(db): Extension<DatabaseConnection>,
-    Extension(UserEmail(email)): Extension<UserEmail>,
     body: Bytes,
 ) -> impl IntoResponse {
     let msg = match sync_pb::ClientToServerMessage::decode(body.as_ref()) {
@@ -23,12 +22,11 @@ pub async fn handle_command(
         }
     };
 
-    // Prefer email from protobuf `share` field (Chrome always sends it),
-    // fall back to X-Sync-User-Email header, then default.
-    let email = if !msg.share.is_empty() {
-        msg.share.clone()
+    // Email from protobuf `share` field (Chrome sends the signed-in account email).
+    let email = if msg.share.is_empty() {
+        DEFAULT_EMAIL.to_string()
     } else {
-        email
+        msg.share.clone()
     };
 
     let msg_type = message_type_name(msg.message_contents);
