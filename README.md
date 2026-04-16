@@ -1,16 +1,16 @@
 # selfsync
 
+[中文文档](README.zh-CN.md)
+
 Self-hosted Chrome Sync server. Keep your bookmarks, passwords, preferences, and other browser data in sync across devices — without sending anything to Google.
 
 ## How It Works
 
-```
-Chrome ──(--sync-url)──> selfsync-server ──> SQLite
-```
-
-Chrome natively supports pointing sync traffic to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol (protobuf over HTTP) and stores everything locally in a single SQLite file.
+Chrome natively supports syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file.
 
 ## Quick Start
+
+### Option 1: Build from Source
 
 ```bash
 # Build
@@ -23,114 +23,101 @@ cargo build --release
 google-chrome-stable --sync-url=http://127.0.0.1:8080
 ```
 
-Sign into Chrome with your Google account, enable sync, and you're done. All sync data stays on your machine.
+### Option 2: Docker Compose (Recommended)
 
-## What's Inside
+```bash
+docker compose up -d
+```
 
-| Crate | Description |
-|-------|-------------|
-| **selfsync-server** | Sync server — axum, sea-orm, SQLite, 92 Chromium proto files |
-| **selfsync-nigori** | Nigori encryption — AES-128-CBC + HMAC-SHA256, PBKDF2/Scrypt key derivation |
-| **selfsync-payload** | LD_PRELOAD injector — auto-redirects Chrome sync + adds per-user email headers |
+One command. Data is automatically persisted to a Docker volume.
 
-## Server
+### Option 3: Docker
 
-### Endpoints
+```bash
+# Build the image
+docker build -t selfsync .
 
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/command/` | POST | Chrome Sync protocol (protobuf) |
-| `/chrome-sync/command/` | POST | Same as above (alternate path) |
-| `/` | GET | User list (HTML) |
+# Run (data stored in ./data)
+docker run -d -p 8080:8080 -v ./data:/data selfsync
+```
 
-### Configuration
+### Start Syncing
 
-| Env Var | Default | Description |
-|---------|---------|-------------|
+1. Open Chrome with `--sync-url=http://127.0.0.1:8080`
+2. Sign in with your Google account
+3. Enable sync
+
+Done. All your sync data now stays on your machine.
+
+## Configuration
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SELFSYNC_ADDR` | `127.0.0.1:8080` | Listen address |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite database path |
 | `RUST_LOG` | `selfsync_server=info` | Log level |
 
-### How It Stores Data
+When running via Docker, the database defaults to `/data/selfsync.db` and listens on `0.0.0.0:8080`.
 
-- **SQLite** with WAL mode — single file, zero setup
-- **Single `sync_entities` table** — no sharding, no complexity
-- **Per-user version counter** for conflict detection
-- **Nigori keystore passphrase** auto-generated on first sync
+## Multi-User Support (Optional)
 
-On first connect, the server automatically creates:
-- Nigori encryption node (keystore passphrase)
-- Bookmark root folders (Bookmark Bar, Other Bookmarks, Mobile Bookmarks)
+By default, all data goes under a single anonymous user — perfectly fine for personal use.
 
-### Authentication
-
-Without the LD_PRELOAD payload, authentication is trivial: Chrome sends its Google OAuth token (which the server ignores), and all data goes under a default `anonymous@localhost` user. This is fine for single-user self-hosting.
-
-With the payload, the proxy injects an `X-Sync-User-Email` header, enabling multi-user support.
-
-## LD_PRELOAD Payload (Optional)
-
-For multi-user setups or when you want automatic per-profile email identification:
+For shared servers with multiple users, the server needs to know which Google account each sync request belongs to. Chrome does not send this information on its own, so selfsync uses an LD\_PRELOAD injector to intercept Chrome's sync traffic and tag each request with the user's email.
 
 ```bash
 LD_PRELOAD=./target/release/libselfsync_payload.so google-chrome-stable
 ```
 
-The payload:
-1. Hooks `__libc_start_main` to detect Chrome's browser process
-2. Reads Chrome's Preferences to build a `cache_guid → email` mapping
-3. Starts a local HTTP proxy that adds `X-Sync-User-Email` headers
-4. Injects `--sync-url` pointing to the proxy
+It hooks into Chrome at startup, reads the local profile data to figure out which Google account is active, and injects the corresponding email header into every sync request.
 
-## Nigori Library
+### Platform Support
 
-Standalone Rust implementation of the [Nigori protocol](https://www.cl.cam.ac.uk/~drt24/nigori/nigori-overview.pdf), compatible with Chromium's sync encryption:
+| Platform | Single-user sync | Multi-user sync |
+|----------|-----------------|-----------------|
+| Linux | Yes | Yes (via LD\_PRELOAD) |
+| macOS | Yes | Not yet |
+| Windows | Yes | Not yet |
+| iOS / Android | Not applicable | Not applicable |
 
-```rust
-use selfsync_nigori::{Nigori, KeyDerivationParams};
+**Why only Linux for multi-user?** Multi-user support requires injecting code into the Chrome process to intercept sync requests. On Linux this is done via `LD_PRELOAD`, a standard mechanism for hooking shared libraries. macOS and Windows have no direct equivalent — macOS has `DYLD_INSERT_LIBRARIES` but SIP blocks it for system-protected binaries, and Windows would require DLL injection techniques. Support for these platforms is planned but not yet implemented.
 
-let nigori = Nigori::create_by_derivation(
-    &KeyDerivationParams::pbkdf2(),
-    "passphrase",
-)?;
+Single-user sync works on any platform — just launch Chrome with `--sync-url` and all data goes under the default anonymous user.
 
-let encrypted = nigori.encrypt(b"secret data");
-let decrypted = nigori.decrypt(&encrypted)?;
-```
+### Roadmap: Custom Chromium Build
 
-Validated against Chromium and [go-nigori](https://github.com/nicktcortes/nicktcortes) test vectors.
+We are planning to build a custom Chromium browser that natively sends user identity with sync requests. This would eliminate the need for LD\_PRELOAD hooking entirely — multi-user sync would work out of the box on all platforms without any injection.
+
+## Things to Watch Out For
+
+- **Do NOT include `/command/` in `--sync-url`**. Chrome appends it automatically. Just use `http://127.0.0.1:8080`.
+- **After resetting the server database, you must use a fresh Chrome profile**. Chrome caches encryption state locally. An old profile against a new database will break. Use `--user-data-dir=/tmp/test-profile` to create a throwaway profile.
+- **Multi-user sync only works on Linux for now**. See [Platform Support](#platform-support) above.
+- **HTTP only for now**. Works fine when Chrome and the server are on the same machine. For remote access, put an HTTPS reverse proxy (nginx, caddy, etc.) in front.
 
 ## Building
 
+Requires Rust 1.85+:
+
 ```bash
-cargo build --release                        # Everything
+cargo build --release                        # Build everything
 cargo build --release -p selfsync-server     # Server only
-cargo build --release -p selfsync-payload    # Payload .so only
-cargo test                                   # Run tests
-cargo clippy                                 # Lint
+cargo build --release -p selfsync-payload    # Injector only
 ```
 
-Requires Rust 2024 edition (1.85+) and `protoc` is NOT needed — proto compilation uses prost-build.
+## Documentation
 
-## Project Structure
+For implementation details, see the [docs/](docs/) directory:
 
-```
-selfsync/
-├── crates/
-│   ├── sync-server/     # Chrome sync server
-│   │   ├── proto/       # 92 Chromium .proto files
-│   │   └── src/
-│   ├── nigori/          # Nigori encryption library
-│   │   └── src/
-│   └── payload/         # LD_PRELOAD Chrome injector
-│       └── src/
-└── docs/
-```
+- [architecture.md](docs/architecture.md) — Architecture and internals
+- [account-mapping.md](docs/account-mapping.md) — Multi-user account mapping algorithm
 
 ## Prior Art
 
-- Chromium's `components/sync/engine/loopback_server/loopback_server.cc` — Reference sync server implementation
+- Chromium `loopback_server.cc` — Reference sync server implementation
 
 ## License
 
-MIT
+[GPL-3.0](LICENSE)
