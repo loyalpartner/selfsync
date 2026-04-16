@@ -1,0 +1,117 @@
+// Copyright 2018 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// Sync protocol datatype extension for the send tab to self items.
+
+// If you change or add any fields in this file, update proto_visitors.h and
+// potentially proto_enum_conversions.{h, cc}.
+
+syntax = "proto2";
+
+package sync_pb;
+
+import "tab_navigation.proto";
+
+option java_multiple_files = true;
+option java_package = "org.chromium.components.sync.protocol";
+option optimize_for = LITE_RUNTIME;
+
+// Send Tab To Self list entry. This proto contains the fields synced to send
+// a url across devices.
+message SendTabToSelfSpecifics {
+  // A random unique identifier for each shared tab.
+  // Required.
+  optional string guid = 5;
+  // The name of the tab being shared.
+  optional string title = 1;
+  // The URL of the tab being shared.
+  // Required.
+  optional string url = 2;
+  // The time the tab was shared as measured by the client in microseconds since
+  // the windows epoch.
+  optional int64 shared_time_usec = 3;
+  // A non-unique but human readable name to describe this client, used in UI.
+  optional string device_name = 4;
+  // The stable Device_id of the device that this tab was shared with.
+  // Required.
+  optional string target_device_sync_cache_guid = 7;
+  // A boolean to designate if the shared tab been opened on the target device.
+  optional bool opened = 8;
+  // Whether the notification for this proto been dismissed.
+  optional bool notification_dismissed = 9;
+
+  reserved "navigation_time_usec";
+  reserved 6;
+
+  optional PageContext page_context = 10;
+
+  // Navigation history for the shared tab. If not empty, the `url` and `title`
+  // fields above should match the navigation at `current_navigation_index`.
+  // These top-level fields are kept for backward compatibility and are
+  // currently duplicated.
+  // TODO(crbug.com/495336862): Deduplicate these fields once older clients are
+  // no longer supported.
+  repeated TabNavigation navigation = 11;
+
+  // Index of the current navigation in `navigation`.
+  optional int32 current_navigation_index = 12;
+
+  // Time (in microseconds since the Windows epoch) when the entry was first
+  // received by the target device's bridge. Set by the receiving device and
+  // synced back to the sender.
+  // New in M148.
+  optional int64 received_time_windows_epoch_micros = 13;
+
+  // Time (in microseconds since the Windows epoch) when the entry was opened
+  // on the target device. Set by the receiving device and synced back to the
+  // sender.
+  // New in M148.
+  optional int64 opened_time_windows_epoch_micros = 14;
+}
+
+message PageContext {
+  optional FormFieldInfo form_field_info = 1;
+
+  // Information about the scroll position on the page.
+  optional ScrollPosition scroll_position = 2;
+}
+
+message FormFieldInfo {
+  repeated FormField fields = 1;
+}
+
+message FormField {
+  optional string id_attribute = 1;
+  optional string name_attribute = 2;
+  reserved 3;
+  optional string form_control_type = 4;
+  optional string value = 5;
+}
+
+message ScrollPosition {
+  // Text fragment data used for scroll position restoration on the target
+  // device.
+  optional TextFragmentData text_fragment = 1;
+}
+
+// Text fragment data used for scroll position restoration.
+// https://wicg.github.io/scroll-to-text-fragment/
+message TextFragmentData {
+  // The exact text to match.
+  // Corresponds to the 'textStart' parameter in the Text Fragment
+  // specification.
+  optional string text_start = 1;
+
+  // Optional: The end text for a range selection.
+  // Corresponds to 'textEnd'.
+  optional string text_end = 2;
+
+  // Optional: Prefix to ensure uniqueness of the match.
+  // Corresponds to 'prefix'.
+  optional string prefix = 3;
+
+  // Optional: Suffix to ensure uniqueness of the match.
+  // Corresponds to 'suffix'.
+  optional string suffix = 4;
+}

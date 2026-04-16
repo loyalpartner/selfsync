@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**selfsync** — self-hosted Chrome sync solution. A Cargo workspace with two crates:
+**selfsync** — self-hosted Chrome sync solution. A Cargo workspace with three crates:
 
 - **selfsync-payload** — LD_PRELOAD shared library (cdylib) that injects into Google Chrome. Hooks `__libc_start_main` to redirect sync traffic to a local server via `--sync-url`, identifies users by `cache_guid → email` mapping from Chrome Preferences.
-- **selfsync-server** — Chrome sync server implementation (TODO).
+- **selfsync-server** — Chrome sync server (axum + sea-orm + SQLite). Handles `COMMIT` and `GET_UPDATES` via protobuf. Auth from `X-Sync-User-Email` header.
+- **selfsync-nigori** — Nigori encryption library (AES-128-CBC + HMAC-SHA256, PBKDF2/Scrypt key derivation).
 
 ## Build & Test
 
@@ -34,11 +35,30 @@ selfsync/
 │   │       ├── lib.rs       # __libc_start_main hook, argv injection
 │   │       ├── mapping.rs   # cache_guid → email mapping from Preferences
 │   │       └── proxy.rs     # HTTP proxy, adds X-Sync-User-Email header
-│   └── sync-server/     # Chrome sync server (TODO)
+│   ├── nigori/          # Nigori encryption library
+│   │   └── src/
+│   │       ├── lib.rs       # Nigori struct: encrypt/decrypt/get_key_name
+│   │       ├── keys.rs      # PBKDF2 and Scrypt key derivation
+│   │       ├── stream.rs    # NigoriStream binary serialization
+│   │       └── error.rs     # Error types
+│   └── sync-server/     # Chrome sync server
+│       ├── proto/           # 92 Chromium .proto files
+│       ├── build.rs         # prost-build proto compilation
 │       └── src/
-│           └── main.rs
+│           ├── main.rs      # axum server entry point
+│           ├── proto.rs     # Generated protobuf types
+│           ├── auth.rs      # X-Sync-User-Email middleware
+│           ├── progress.rs  # Progress token encoding/decoding
+│           ├── db/
+│           │   ├── mod.rs       # SQLite connection + WAL mode
+│           │   ├── migration.rs # Schema creation (users, sync_entities)
+│           │   └── entity/      # sea-orm entities
+│           └── handler/
+│               ├── sync.rs      # POST /command/ dispatch
+│               ├── commit.rs    # COMMIT: create/update entities
+│               └── get_updates.rs # GET_UPDATES: fetch by version
 └── docs/
-    └── account-mapping.md   # Mapping algorithm documentation
+    └── account-mapping.md
 ```
 
 ## Payload Architecture
@@ -48,6 +68,31 @@ selfsync/
 - **mapping.rs** — Builds `cache_guid -> email` mapping by scanning all Chrome profile directories. Algorithm: `account_info[].gaia` → `base64(sha256(gaia_id))` → match key in `sync.transport_data_per_account` → extract `sync.cache_guid`. See `docs/account-mapping.md`.
 
 - **proxy.rs** — HTTP proxy on dynamic port (OS-assigned). Extracts `client_id` from URL query, looks up email, adds `X-Sync-User-Email` header, forwards to upstream.
+
+## Sync Server
+
+- **Endpoint**: `POST /command/` — handles protobuf `ClientToServerMessage` → `ClientToServerResponse`
+- **Alternate**: `POST /chrome-sync/command/` — same handler, for `--sync-url=http://host:port/chrome-sync`
+- **Dashboard**: `GET /` — HTML user list
+- **Auth**: reads `X-Sync-User-Email` header (injected by payload proxy), fallback `anonymous@localhost`
+- **Storage**: SQLite (WAL mode), single `sync_entities` table (no sharding)
+- **Version**: per-user monotonic counter (`users.next_version`), assigned on commit
+- **Progress tokens**: `v1,{data_type_id},{version}` base64-encoded
+- **Config env vars**: `SELFSYNC_DB` (default: `selfsync.db`), `SELFSYNC_ADDR` (default: `127.0.0.1:8080`)
+- **User init**: on first sync, auto-creates Nigori node (keystore passphrase) + 4 bookmark permanent folders
+- **Proto module**: `proto.rs` wraps generated code with `#[allow(clippy::all, dead_code, deprecated)]`
+
+## Chrome Sync Protocol Gotchas
+
+- `--sync-url=http://host:port` — Chrome appends `/command/` automatically; do NOT include it in the URL
+- `ClientToServerResponse.error_code` must be explicitly set to `SUCCESS (0)` — proto default is `UNKNOWN`, Chrome treats it as error
+- `NigoriSpecifics.passphrase_type`: `KEYSTORE_PASSPHRASE = 2`, `CUSTOM_PASSPHRASE = 4` — wrong value causes "Needs passphrase" error
+- Chrome caches Nigori state locally; after server DB reset, must use fresh Chrome profile (`--user-data-dir=/tmp/test`)
+- NEW_CLIENT GetUpdates expects Nigori entity to exist on server; without it Chrome stalls at "Initializing"
+- GetUpdates response must include `encryption_keys` when `need_encryption_key=true` and origin is `NEW_CLIENT`
+- prost generates `EntitySpecifics.specifics_variant` (oneof), not individual fields like `bookmark`/`nigori`
+- Proto field `client_tag_hash` (not `client_defined_unique_tag`), `message_contents` is `i32` (not enum)
+- Chromium proto imports use `components/sync/protocol/` prefix — must strip when copying to local `proto/` dir
 
 ## Key Chromium Source References
 
