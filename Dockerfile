@@ -1,5 +1,7 @@
 FROM rust:slim AS builder
 
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p selfsync-server
