@@ -7,7 +7,7 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::sync::OnceLock;
 
 use mapping::AccountMapping;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 const UPSTREAM_URL: &str = "https://clients4.google.com/chrome-sync";
 
@@ -53,9 +53,13 @@ fn is_chrome_browser_process(argc: c_int, argv: *mut *mut c_char) -> bool {
     }
 
     let argv0 = unsafe { CStr::from_ptr(*argv) };
-    let is_chrome = argv0
-        .to_str()
-        .is_ok_and(|s| s.ends_with("/chrome") || s.ends_with("/chrome-stable") || s == "chrome");
+    let is_chrome = argv0.to_str().is_ok_and(|s| {
+        let bin = s.rsplit('/').next().unwrap_or(s);
+        matches!(
+            bin,
+            "chrome" | "chrome-stable" | "google-chrome" | "google-chrome-stable" | "chromium"
+        )
+    });
 
     if !is_chrome {
         return false;
@@ -127,9 +131,10 @@ pub unsafe extern "C" fn __libc_start_main(
     } else {
         "?"
     };
-    debug!(argv0, "hooked __libc_start_main");
+    let is_chrome = is_chrome_browser_process(argc, argv);
+    info!(argv0, is_chrome, "hooked process");
 
-    if !is_chrome_browser_process(argc, argv) {
+    if !is_chrome {
         unsafe {
             REAL_MAIN = Some(main);
             return real_start_main(wrapped_main, argc, argv, init, fini, rtld_fini, stack_end);
