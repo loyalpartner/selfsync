@@ -2,3 +2,27 @@
 name = "selfsync-server"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
+bytes = "1"
+prost = "0.13"
+rand = "0.9"
+sea-orm = { version = "1", features = [
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "macros",
+] }
+sea-orm-migration = "1"
+selfsync-nigori = { path = "../nigori" }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["compression-gzip", "decompression-gzip"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+prost-build = "0.13"
