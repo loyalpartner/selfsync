@@ -93,9 +93,7 @@ LD_PRELOAD=./target/release/libselfsync_payload.so google-chrome-stable
 ## 注意事项
 
 - **`--sync-url` 不要带 `/command/`**。Chrome 会自己追加，写 `http://127.0.0.1:8080` 就行。
-- **重置数据库后必须用全新的 Chrome 配置文件**。Chrome 会在本地缓存加密状态，旧配置文件连新数据库会出问题。用 `--user-data-dir=/tmp/test-profile` 可以快速创建临时配置文件。
 - **多用户同步目前只支持 Linux**。详见上面的[平台支持](#平台支持)。
-- **目前只支持 HTTP**。服务器和 Chrome 在同一台机器上直接连就行。跨机器的话建议前面套一层 HTTPS 反向代理（nginx、caddy 等）。
 
 ## 编译
 

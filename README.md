@@ -93,9 +93,7 @@ We are planning to build a custom Chromium browser that natively sends user iden
 ## Things to Watch Out For
 
 - **Do NOT include `/command/` in `--sync-url`**. Chrome appends it automatically. Just use `http://127.0.0.1:8080`.
-- **After resetting the server database, you must use a fresh Chrome profile**. Chrome caches encryption state locally. An old profile against a new database will break. Use `--user-data-dir=/tmp/test-profile` to create a throwaway profile.
 - **Multi-user sync only works on Linux for now**. See [Platform Support](#platform-support) above.
-- **HTTP only for now**. Works fine when Chrome and the server are on the same machine. For remote access, put an HTTPS reverse proxy (nginx, caddy, etc.) in front.
 
 ## Building
 

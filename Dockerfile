@@ -1,16 +1,14 @@
-FROM rust:slim AS builder
+FROM rust:alpine AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache musl-dev protobuf-dev
 
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p selfsync-server
 
-FROM debian:bookworm-slim
+FROM alpine:3
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-0 ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache sqlite-libs ca-certificates
 
 COPY --from=builder /src/target/release/selfsync-server /usr/local/bin/
 
