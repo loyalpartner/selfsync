@@ -137,19 +137,32 @@ impl AccountMapping {
         }
 
         // 在 transport_data_per_account 中找 target_cache_guid
-        let transport = prefs.sync?.transport_data_per_account?;
-        for (gaia_id_hash, data) in &transport {
-            if data.cache_guid.as_deref() == Some(target_cache_guid) {
-                // 反查 gaia_id_hash → gaia_id → email
-                let email = gaia_to_email.iter().find_map(|(gaia_id, email)| {
-                    if gaia_id_to_hash(gaia_id) == *gaia_id_hash {
-                        Some(email.clone())
-                    } else {
-                        None
-                    }
-                });
-                return email;
+        if let Some(transport) = prefs
+            .sync
+            .as_ref()
+            .and_then(|s| s.transport_data_per_account.as_ref())
+        {
+            for (gaia_id_hash, data) in transport {
+                if data.cache_guid.as_deref() == Some(target_cache_guid) {
+                    let email = gaia_to_email.iter().find_map(|(gaia_id, email)| {
+                        if gaia_id_to_hash(gaia_id) == *gaia_id_hash {
+                            Some(email.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    return email;
+                }
             }
+        }
+
+        // Fallback: transport_data 还没写入磁盘，但 profile 只有一个账号时直接用
+        if gaia_to_email.len() == 1 {
+            let email = gaia_to_email.into_values().next();
+            if email.is_some() {
+                tracing::debug!("cache_guid not in Preferences yet, using single-account fallback");
+            }
+            return email;
         }
 
         None
