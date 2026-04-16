@@ -150,8 +150,8 @@ pub unsafe extern "C" fn __libc_start_main(
 
     info!(user_data_dir, "chrome browser process detected");
 
-    let account_mapping = AccountMapping::build(&user_data_dir);
-    info!(?account_mapping, "built account mapping");
+    let account_mapping = AccountMapping::new(&user_data_dir);
+    info!(?account_mapping, "initialized account mapping (lazy-load)");
     MAPPING.set(account_mapping).ok();
 
     let upstream = upstream_url();

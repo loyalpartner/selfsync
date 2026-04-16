@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-/// cache_guid → email 映射表
-#[derive(Debug, Default)]
+/// 懒加载的 cache_guid → email 映射。
+/// 收到请求时按需扫描 Preferences，命中后缓存。
 pub struct AccountMapping {
-    map: HashMap<String, String>,
+    user_data_dir: PathBuf,
+    cache: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -50,38 +52,65 @@ struct TransportData {
 }
 
 impl AccountMapping {
-    /// 扫描所有 profile 目录，构建 cache_guid → email 映射
-    pub fn build(user_data_dir: &str) -> Self {
-        let mut mapping = AccountMapping::default();
-        let base = Path::new(user_data_dir);
+    pub fn new(user_data_dir: &str) -> Self {
+        Self {
+            user_data_dir: PathBuf::from(user_data_dir),
+            cache: Mutex::new(HashMap::new()),
+        }
+    }
 
-        // 扫描 Default + Profile N 目录
-        let mut profile_dirs = vec![base.join("Default")];
-        if let Ok(entries) = fs::read_dir(base) {
+    /// 通过 client_id (cache_guid) 查找 email。
+    /// 先查缓存，miss 时扫描所有 profile 的 Preferences 文件。
+    pub fn lookup(&self, client_id: &str) -> Option<String> {
+        // 1. 查缓存
+        if let Some(email) = self.cache.lock().unwrap().get(client_id) {
+            return Some(email.clone());
+        }
+
+        // 2. cache miss — 扫描所有 profile
+        let found = self.scan_profiles(client_id);
+
+        // 3. 命中则缓存
+        if let Some(ref email) = found {
+            self.cache
+                .lock()
+                .unwrap()
+                .insert(client_id.to_string(), email.clone());
+            tracing::info!(client_id, email, "resolved and cached account mapping");
+        }
+
+        found
+    }
+
+    fn scan_profiles(&self, target_cache_guid: &str) -> Option<String> {
+        let profile_dirs = self.list_profile_dirs();
+
+        for dir in &profile_dirs {
+            if let Some(email) = self.find_email_in_profile(dir, target_cache_guid) {
+                return Some(email);
+            }
+        }
+        None
+    }
+
+    fn list_profile_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = vec![self.user_data_dir.join("Default")];
+        if let Ok(entries) = fs::read_dir(&self.user_data_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with("Profile ") {
-                    profile_dirs.push(entry.path());
+                if name.to_string_lossy().starts_with("Profile ") {
+                    dirs.push(entry.path());
                 }
             }
         }
-
-        for dir in &profile_dirs {
-            if let Err(e) = mapping.load_profile(dir) {
-                tracing::debug!("skipping {}: {e}", dir.display());
-            }
-        }
-
-        mapping
+        dirs
     }
 
-    fn load_profile(&mut self, profile_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        let prefs_path = profile_dir.join("Preferences");
-        let content = fs::read_to_string(&prefs_path)?;
-        let prefs: Preferences = serde_json::from_str(&content)?;
+    fn find_email_in_profile(&self, profile_dir: &Path, target_cache_guid: &str) -> Option<String> {
+        let content = fs::read_to_string(profile_dir.join("Preferences")).ok()?;
+        let prefs: Preferences = serde_json::from_str(&content).ok()?;
 
-        // 构建 gaia_id → email 映射
+        // gaia_id → email
         let mut gaia_to_email: HashMap<String, String> = HashMap::new();
 
         if let Some(accounts) = &prefs.account_info {
@@ -92,7 +121,6 @@ impl AccountMapping {
             }
         }
 
-        // 从 google.services 补充（如果 account_info 没有对应的 email）
         if let Some(google) = &prefs.google
             && let Some(services) = &google.services
             && let Some(account_id) = &services.account_id
@@ -108,44 +136,36 @@ impl AccountMapping {
             }
         }
 
-        // 遍历 transport_data_per_account，通过 gaia_id_hash 关联 cache_guid 和 email
-        if let Some(sync) = &prefs.sync
-            && let Some(transport) = &sync.transport_data_per_account
-        {
-            for (gaia_id_hash, data) in transport {
-                if let Some(cache_guid) = &data.cache_guid {
-                    let email = gaia_to_email.iter().find_map(|(gaia_id, email)| {
-                        let hash = gaia_id_to_hash(gaia_id);
-                        if &hash == gaia_id_hash {
-                            Some(email.clone())
-                        } else {
-                            None
-                        }
-                    });
-
-                    if let Some(email) = email {
-                        let profile = profile_dir
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string();
-                        tracing::info!(profile, cache_guid, email, "mapped account");
-                        self.map.insert(cache_guid.clone(), email);
+        // 在 transport_data_per_account 中找 target_cache_guid
+        let transport = prefs.sync?.transport_data_per_account?;
+        for (gaia_id_hash, data) in &transport {
+            if data.cache_guid.as_deref() == Some(target_cache_guid) {
+                // 反查 gaia_id_hash → gaia_id → email
+                let email = gaia_to_email.iter().find_map(|(gaia_id, email)| {
+                    if gaia_id_to_hash(gaia_id) == *gaia_id_hash {
+                        Some(email.clone())
+                    } else {
+                        None
                     }
-                }
+                });
+                return email;
             }
         }
 
-        Ok(())
-    }
-
-    /// 通过 client_id (cache_guid) 查找 email
-    pub fn lookup(&self, client_id: &str) -> Option<&str> {
-        self.map.get(client_id).map(String::as_str)
+        None
     }
 }
 
-/// gaia_id → base64(sha256(gaia_id))
+impl std::fmt::Debug for AccountMapping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let cached = self.cache.lock().unwrap().len();
+        f.debug_struct("AccountMapping")
+            .field("user_data_dir", &self.user_data_dir)
+            .field("cached_entries", &cached)
+            .finish()
+    }
+}
+
 fn gaia_id_to_hash(gaia_id: &str) -> String {
     let hash = Sha256::digest(gaia_id.as_bytes());
     BASE64.encode(hash)

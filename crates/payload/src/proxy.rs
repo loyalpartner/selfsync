@@ -61,7 +61,7 @@ fn handle_request(
 
     match &email {
         Some(email) => info!(
-            email,
+            email = email.as_str(),
             client_id = client_id.as_deref().unwrap_or("?"),
             "sync request"
         ),
