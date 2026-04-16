@@ -15,18 +15,24 @@ pub async fn handle_command(
     Extension(UserEmail(email)): Extension<UserEmail>,
     body: Bytes,
 ) -> impl IntoResponse {
-    tracing::info!(email, body_len = body.len(), "incoming sync request");
-
     let msg = match sync_pb::ClientToServerMessage::decode(body.as_ref()) {
         Ok(m) => m,
         Err(e) => {
-            tracing::error!(email, "failed to decode ClientToServerMessage: {e}");
+            tracing::error!("failed to decode ClientToServerMessage: {e}");
             return (StatusCode::BAD_REQUEST, Vec::new());
         }
     };
 
+    // Prefer email from protobuf `share` field (Chrome always sends it),
+    // fall back to X-Sync-User-Email header, then default.
+    let email = if !msg.share.is_empty() {
+        msg.share.clone()
+    } else {
+        email
+    };
+
     let msg_type = message_type_name(msg.message_contents);
-    tracing::info!(email, msg_type, "processing sync message");
+    tracing::info!(email, msg_type, body_len = body.len(), "sync request");
 
     let user = match find_or_create_user(&db, &email).await {
         Ok(u) => u,
