@@ -5,7 +5,10 @@ mod progress;
 mod proto;
 mod util;
 
-use axum::{Extension, Router, middleware, routing::post};
+use axum::{
+    Extension, Router, middleware,
+    routing::{get, post},
+};
 use tower_http::decompression::RequestDecompressionLayer;
 
 #[tokio::main]
@@ -24,9 +27,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(db_path, "database connected");
 
     let app = Router::new()
+        .route("/", get(handler::list_users))
         .route("/command/", post(handler::handle_command))
-        // Also handle without trailing slash
         .route("/command", post(handler::handle_command))
+        .route("/chrome-sync/command/", post(handler::handle_command))
+        .route("/chrome-sync/command", post(handler::handle_command))
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(RequestDecompressionLayer::new())
         .layer(Extension(db));
