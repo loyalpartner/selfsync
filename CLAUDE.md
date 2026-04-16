@@ -72,11 +72,27 @@ selfsync/
 ## Sync Server
 
 - **Endpoint**: `POST /command/` — handles protobuf `ClientToServerMessage` → `ClientToServerResponse`
+- **Alternate**: `POST /chrome-sync/command/` — same handler, for `--sync-url=http://host:port/chrome-sync`
+- **Dashboard**: `GET /` — HTML user list
 - **Auth**: reads `X-Sync-User-Email` header (injected by payload proxy), fallback `anonymous@localhost`
 - **Storage**: SQLite (WAL mode), single `sync_entities` table (no sharding)
 - **Version**: per-user monotonic counter (`users.next_version`), assigned on commit
 - **Progress tokens**: `v1,{data_type_id},{version}` base64-encoded
 - **Config env vars**: `SELFSYNC_DB` (default: `selfsync.db`), `SELFSYNC_ADDR` (default: `127.0.0.1:8080`)
+- **User init**: on first sync, auto-creates Nigori node (keystore passphrase) + 4 bookmark permanent folders
+- **Proto module**: `proto.rs` wraps generated code with `#[allow(clippy::all, dead_code, deprecated)]`
+
+## Chrome Sync Protocol Gotchas
+
+- `--sync-url=http://host:port` — Chrome appends `/command/` automatically; do NOT include it in the URL
+- `ClientToServerResponse.error_code` must be explicitly set to `SUCCESS (0)` — proto default is `UNKNOWN`, Chrome treats it as error
+- `NigoriSpecifics.passphrase_type`: `KEYSTORE_PASSPHRASE = 2`, `CUSTOM_PASSPHRASE = 4` — wrong value causes "Needs passphrase" error
+- Chrome caches Nigori state locally; after server DB reset, must use fresh Chrome profile (`--user-data-dir=/tmp/test`)
+- NEW_CLIENT GetUpdates expects Nigori entity to exist on server; without it Chrome stalls at "Initializing"
+- GetUpdates response must include `encryption_keys` when `need_encryption_key=true` and origin is `NEW_CLIENT`
+- prost generates `EntitySpecifics.specifics_variant` (oneof), not individual fields like `bookmark`/`nigori`
+- Proto field `client_tag_hash` (not `client_defined_unique_tag`), `message_contents` is `i32` (not enum)
+- Chromium proto imports use `components/sync/protocol/` prefix — must strip when copying to local `proto/` dir
 
 ## Key Chromium Source References
 
