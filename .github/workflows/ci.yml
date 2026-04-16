@@ -12,7 +12,7 @@ jobs:
     container: rust:slim
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y --no-install-recommends protobuf-compiler
+      - run: apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
       - run: rustup component add clippy rustfmt
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
