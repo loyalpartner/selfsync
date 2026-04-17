@@ -1,13 +1,13 @@
 use std::io::Cursor;
 
 use tiny_http::{Header, Response, Server};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::get_mapping;
 
 const EMAIL_HEADER: &str = "X-Sync-User-Email";
 
-/// 启动代理，绑定到 127.0.0.1:0（OS 分配端口），返回实际端口
 pub fn start(_upstream_base: &str) -> Result<(Server, u16), Box<dyn std::error::Error>> {
     let server = Server::http("127.0.0.1:0").map_err(|e| format!("bind 127.0.0.1:0: {e}"))?;
     let port = server
@@ -15,7 +15,7 @@ pub fn start(_upstream_base: &str) -> Result<(Server, u16), Box<dyn std::error::
         .to_ip()
         .ok_or("failed to get server address")?
         .port();
-    eprintln!("[lzc-sync] proxy listening on 127.0.0.1:{port}");
+    info!(port, "proxy listening");
     Ok((server, port))
 }
 
@@ -29,11 +29,11 @@ pub fn run(server: Server, upstream_base: &str) -> Result<(), Box<dyn std::error
         match result {
             Ok(response) => {
                 if let Err(e) = request.respond(response) {
-                    eprintln!("[lzc-sync] respond error: {e}");
+                    error!("respond error: {e}");
                 }
             }
             Err(e) => {
-                eprintln!("[lzc-sync] request error: {e}");
+                error!("request error: {e}");
                 let resp = Response::from_string(format!("proxy error: {e}")).with_status_code(502);
                 let _ = request.respond(resp);
             }
@@ -48,7 +48,6 @@ fn handle_request(
     request: &mut tiny_http::Request,
     upstream_base: &str,
 ) -> Result<Response<Cursor<Vec<u8>>>, Box<dyn std::error::Error>> {
-    // 从 URL query 参数中提取 client_id
     let request_url = format!("http://localhost{}", request.url());
     let parsed = Url::parse(&request_url)?;
     let client_id = parsed
@@ -56,38 +55,30 @@ fn handle_request(
         .find(|(k, _)| k == "client_id")
         .map(|(_, v)| v.to_string());
 
-    // 查找 email
     let email = client_id
         .as_deref()
         .and_then(|id| get_mapping().and_then(|m| m.lookup(id)));
 
-    if let Some(email) = email {
-        eprintln!(
-            "[lzc-sync] sync request from: {email} (client_id: {})",
-            client_id.as_deref().unwrap_or("?")
-        );
-    } else {
-        eprintln!(
-            "[lzc-sync] sync request, unknown user (client_id: {:?})",
-            client_id
-        );
+    match &email {
+        Some(email) => info!(
+            email,
+            client_id = client_id.as_deref().unwrap_or("?"),
+            "sync request"
+        ),
+        None => warn!(client_id = ?client_id, "sync request from unknown user"),
     }
 
-    // 构建上游 URL: 替换 host 部分，保留 path 和 query
     let upstream_url = build_upstream_url(upstream_base, request.url())?;
+    debug!(upstream_url, "forwarding request");
 
-    // 读取请求 body
     let mut body = Vec::new();
     request.as_reader().read_to_end(&mut body)?;
 
-    // 构建转发请求
     let mut upstream_req = client.post(&upstream_url);
 
-    // 复制原始 headers
     for header in request.headers() {
         let name = header.field.as_str().as_str();
         let value = header.value.as_str();
-        // 跳过 hop-by-hop headers 和 host
         if matches!(
             name.to_lowercase().as_str(),
             "host" | "connection" | "transfer-encoding" | "content-length"
@@ -97,16 +88,15 @@ fn handle_request(
         upstream_req = upstream_req.header(name, value);
     }
 
-    // 添加 email header
     if let Some(email) = email {
         upstream_req = upstream_req.header(EMAIL_HEADER, email);
     }
 
-    // 发送请求
     let upstream_resp = upstream_req.body(body).send()?;
 
-    // 构建响应
     let status = upstream_resp.status().as_u16();
+    debug!(status, "upstream response");
+
     let resp_headers: Vec<Header> = upstream_resp
         .headers()
         .iter()
@@ -132,21 +122,14 @@ fn handle_request(
     Ok(response)
 }
 
-/// 将本地代理 URL 转换为上游 Google URL
-/// 输入: /chrome-sync/command/?client=Google+Chrome&client_id=xxx
-/// 输出: https://clients4.google.com/chrome-sync/command/?client=Google+Chrome&client_id=xxx
 fn build_upstream_url(
     upstream_base: &str,
     local_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let base = Url::parse(upstream_base)?;
-
-    // local_path: /chrome-sync/command/?client=...
-    // 去掉前缀 /chrome-sync，保留 /command/?...
     let stripped = local_path
         .strip_prefix("/chrome-sync")
         .unwrap_or(local_path);
-
     let base_str = base.as_str().trim_end_matches('/');
     Ok(format!("{base_str}{stripped}"))
 }

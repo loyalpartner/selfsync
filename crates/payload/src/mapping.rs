@@ -69,7 +69,7 @@ impl AccountMapping {
 
         for dir in &profile_dirs {
             if let Err(e) = mapping.load_profile(dir) {
-                eprintln!("[lzc-sync] skipping {}: {e}", dir.display());
+                tracing::debug!("skipping {}: {e}", dir.display());
             }
         }
 
@@ -124,14 +124,12 @@ impl AccountMapping {
                     });
 
                     if let Some(email) = email {
-                        eprintln!(
-                            "[lzc-sync]   {} -> cache_guid={} -> {email}",
-                            profile_dir
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy(),
-                            cache_guid
-                        );
+                        let profile = profile_dir
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        tracing::info!(profile, cache_guid, email, "mapped account");
                         self.map.insert(cache_guid.clone(), email);
                     }
                 }
