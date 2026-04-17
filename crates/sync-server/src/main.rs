@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(handler::list_users))
+        .route("/healthz", get(|| async { "ok" }))
         .route("/command/", post(handler::handle_command))
         .route("/command", post(handler::handle_command))
         .route("/chrome-sync/command/", post(handler::handle_command))

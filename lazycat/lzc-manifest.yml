@@ -1,20 +1,4 @@
-name: SelfSync
-description: 自托管 Chrome 同步服务器，让浏览器数据留在本地
-version: 0.1.0
-package: selfsync.loyalpartner
-homepage: https://github.com/loyalpartner/selfsync
-author: loyalpartner
-license: GPL-3.0
 lzc-sdk-version: 0.1
-
-locales:
-  zh-CN:
-    name: SelfSync
-    description: 自托管 Chrome 同步服务器 — 书签、密码、偏好等浏览器数据留在本地，不经过 Google
-  en:
-    name: SelfSync
-    description: Self-hosted Chrome Sync server — keep bookmarks, passwords, and preferences on your own device
-
 application:
   subdomain: chrome-sync
   upstreams:
@@ -22,15 +6,9 @@ application:
       backend: http://selfsync:8080
   public_path:
     - /
-  depends_on:
-    - selfsync
-
 services:
   selfsync:
-    # TODO: 替换为 lzc-cli appstore copy-image 推送后的地址
-    # 执行: lzc-cli appstore copy-image selfsync:latest
-    # 然后将下面的 image 替换为输出的 registry.lazycat.cloud/... 地址
-    image: selfsync:latest
+    image: registry.lazycat.cloud/lee/loyalpartner/selfsync:5ad8b1900a0a0179
     environment:
       - SELFSYNC_DB=/lzcapp/var/data/selfsync.db
       - SELFSYNC_ADDR=0.0.0.0:8080
@@ -38,7 +16,5 @@ services:
     binds:
       - /lzcapp/var/data:/data
     healthcheck:
-      test: wget -q -O - http://localhost:8080/ || exit 1
+      path: /healthz
       interval: 30s
-      timeout: 10s
-      retries: 3

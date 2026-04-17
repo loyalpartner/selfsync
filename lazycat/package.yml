@@ -1,0 +1,16 @@
+package: cloud.lazycat.app.chromesync
+version: 0.1.0
+name: SelfSync
+description: 自托管 Chrome 同步服务器，让浏览器数据留在本地
+author: loyalpartner
+license: GPL-3.0
+homepage: https://github.com/loyalpartner/selfsync
+locales:
+  zh-CN:
+    name: SelfSync
+    description: 自托管 Chrome 同步服务器 — 书签、密码、偏好等浏览器数据留在本地，不经过 Google
+  en:
+    name: SelfSync
+    description: >-
+      Self-hosted Chrome Sync server — keep bookmarks, passwords, and
+      preferences on your own device
