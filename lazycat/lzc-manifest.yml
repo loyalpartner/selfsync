@@ -1,4 +1,3 @@
-lzc-sdk-version: 0.1
 application:
   subdomain: chrome-sync
   upstreams:
@@ -6,15 +5,16 @@ application:
       backend: http://selfsync:8080
   public_path:
     - /
+  health_check:
+    test_url: http://selfsync:8080/healthz
+    timeout: 10s
+    start_period: 5s
 services:
   selfsync:
-    image: registry.lazycat.cloud/lee/loyalpartner/selfsync:5ad8b1900a0a0179
+    image: registry.lazycat.cloud/lee/loyalpartner/selfsync:2f640ee48174e19e
     environment:
       - SELFSYNC_DB=/lzcapp/var/data/selfsync.db
       - SELFSYNC_ADDR=0.0.0.0:8080
       - RUST_LOG=selfsync_server=info
     binds:
       - /lzcapp/var/data:/data
-    healthcheck:
-      path: /healthz
-      interval: 30s
