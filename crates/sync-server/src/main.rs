@@ -6,7 +6,7 @@ mod proto;
 mod util;
 
 use axum::{
-    Extension, Router, middleware,
+    Extension, Router,
     routing::{get, post},
 };
 use tower_http::decompression::RequestDecompressionLayer;
@@ -32,7 +32,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/command", post(handler::handle_command))
         .route("/chrome-sync/command/", post(handler::handle_command))
         .route("/chrome-sync/command", post(handler::handle_command))
-        .layer(middleware::from_fn(auth::auth_middleware))
         .layer(RequestDecompressionLayer::new())
         .layer(Extension(db));
 

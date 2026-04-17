@@ -6,7 +6,7 @@ Self-hosted Chrome Sync server. Keep your bookmarks, passwords, preferences, and
 
 ## How It Works
 
-Chrome natively supports syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file.
+Chrome natively supports syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file. Multi-user support works out of the box — Chrome sends the signed-in account email with every sync request.
 
 ## Quick Start
 
@@ -51,52 +51,22 @@ Done. All your sync data now stays on your machine.
 
 ## Configuration
 
-Environment variables:
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SELFSYNC_ADDR` | `127.0.0.1:8080` | Server listen address |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite database path |
-| `SELFSYNC_UPSTREAM` | Google's sync server | Upstream URL for LD\_PRELOAD proxy |
 | `RUST_LOG` | `selfsync_server=info` | Log level |
 
 When running via Docker, the database defaults to `/data/selfsync.db` and listens on `0.0.0.0:8080`.
 
-## Multi-User Support (Optional)
+## Multi-User
 
-By default, all data goes under a single anonymous user — perfectly fine for personal use.
-
-For shared servers with multiple users, the server needs to know which Google account each sync request belongs to. Chrome does not send this information on its own, so selfsync uses an LD\_PRELOAD injector to intercept Chrome's sync traffic and tag each request with the user's email.
-
-```bash
-SELFSYNC_UPSTREAM=http://127.0.0.1:8080/chrome-sync \
-LD_PRELOAD=./target/release/libselfsync_payload.so \
-google-chrome-stable
-```
-
-The injector hooks into Chrome at startup, reads the local profile data to figure out which Google account is active, and injects the corresponding email header into every sync request. `SELFSYNC_UPSTREAM` tells the proxy where to forward traffic — set it to your selfsync-server instance.
-
-### Platform Support
-
-| Platform | Single-user sync | Multi-user sync |
-|----------|-----------------|-----------------|
-| Linux | Yes | Yes (via LD\_PRELOAD) |
-| macOS | Yes | Not yet |
-| Windows | Yes | Not yet |
-| iOS / Android | Not applicable | Not applicable |
-
-**Why only Linux for multi-user?** Multi-user support requires injecting code into the Chrome process to intercept sync requests. On Linux this is done via `LD_PRELOAD`, a standard mechanism for hooking shared libraries. macOS and Windows have no direct equivalent — macOS has `DYLD_INSERT_LIBRARIES` but SIP blocks it for system-protected binaries, and Windows would require DLL injection techniques. Support for these platforms is planned but not yet implemented.
-
-Single-user sync works on any platform — just launch Chrome with `--sync-url` and all data goes under the default anonymous user.
-
-### Roadmap: Custom Chromium Build
-
-We are planning to build a custom Chromium browser that natively sends user identity with sync requests. This would eliminate the need for LD\_PRELOAD hooking entirely — multi-user sync would work out of the box on all platforms without any injection.
+Multi-user works automatically. Chrome includes the signed-in Google account email in every sync request (via the protobuf `share` field). The server uses this to create separate data stores per user — no additional configuration needed.
 
 ## Things to Watch Out For
 
 - **Do NOT include `/command/` in `--sync-url`**. Chrome appends it automatically. Just use `http://127.0.0.1:8080`.
-- **Multi-user sync only works on Linux for now**. See [Platform Support](#platform-support) above.
+- **After resetting the server database**, use a fresh Chrome profile (`--user-data-dir=/tmp/test`) to avoid stale sync state.
 
 ## Building
 
@@ -105,15 +75,8 @@ Requires Rust 1.85+:
 ```bash
 cargo build --release                        # Build everything
 cargo build --release -p selfsync-server     # Server only
-cargo build --release -p selfsync-payload    # Injector only
+cargo test                                   # Run tests
 ```
-
-## Documentation
-
-For implementation details, see the [docs/](docs/) directory:
-
-- [architecture.md](docs/architecture.md) — Architecture and internals
-- [account-mapping.md](docs/account-mapping.md) — Multi-user account mapping algorithm
 
 ## Prior Art
 

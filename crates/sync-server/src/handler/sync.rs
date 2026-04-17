@@ -2,7 +2,7 @@ use axum::{Extension, body::Bytes, http::StatusCode, response::IntoResponse};
 use prost::Message;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
-use crate::auth::UserEmail;
+use crate::auth::DEFAULT_EMAIL;
 use crate::db::entity::user;
 use crate::proto::sync_pb;
 use crate::util::gen_encryption_key;
@@ -12,21 +12,25 @@ use super::{commit, get_updates};
 /// POST /command/ — handles all Chrome sync protocol messages.
 pub async fn handle_command(
     Extension(db): Extension<DatabaseConnection>,
-    Extension(UserEmail(email)): Extension<UserEmail>,
     body: Bytes,
 ) -> impl IntoResponse {
-    tracing::info!(email, body_len = body.len(), "incoming sync request");
-
     let msg = match sync_pb::ClientToServerMessage::decode(body.as_ref()) {
         Ok(m) => m,
         Err(e) => {
-            tracing::error!(email, "failed to decode ClientToServerMessage: {e}");
+            tracing::error!("failed to decode ClientToServerMessage: {e}");
             return (StatusCode::BAD_REQUEST, Vec::new());
         }
     };
 
+    // Email from protobuf `share` field (Chrome sends the signed-in account email).
+    let email = if msg.share.is_empty() {
+        DEFAULT_EMAIL.to_string()
+    } else {
+        msg.share.clone()
+    };
+
     let msg_type = message_type_name(msg.message_contents);
-    tracing::info!(email, msg_type, "processing sync message");
+    tracing::info!(email, msg_type, body_len = body.len(), "sync request");
 
     let user = match find_or_create_user(&db, &email).await {
         Ok(u) => u,
