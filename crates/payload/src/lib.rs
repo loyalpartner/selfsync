@@ -9,7 +9,11 @@ use std::sync::OnceLock;
 use mapping::AccountMapping;
 use tracing::{error, info};
 
-const UPSTREAM_URL: &str = "https://clients4.google.com/chrome-sync";
+const DEFAULT_UPSTREAM_URL: &str = "https://clients4.google.com/chrome-sync";
+
+fn upstream_url() -> String {
+    std::env::var("SELFSYNC_UPSTREAM").unwrap_or_else(|_| DEFAULT_UPSTREAM_URL.to_string())
+}
 
 static MAPPING: OnceLock<AccountMapping> = OnceLock::new();
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
@@ -150,7 +154,10 @@ pub unsafe extern "C" fn __libc_start_main(
     info!(?account_mapping, "built account mapping");
     MAPPING.set(account_mapping).ok();
 
-    let (server, port) = match proxy::start(UPSTREAM_URL) {
+    let upstream = upstream_url();
+    info!(upstream, "upstream sync server");
+
+    let (server, port) = match proxy::start(&upstream) {
         Ok(v) => v,
         Err(e) => {
             error!("failed to start proxy: {e}");
@@ -160,8 +167,6 @@ pub unsafe extern "C" fn __libc_start_main(
             }
         }
     };
-
-    let upstream = UPSTREAM_URL.to_string();
     std::thread::spawn(move || {
         if let Err(e) = proxy::run(server, &upstream) {
             error!("proxy error: {e}");
