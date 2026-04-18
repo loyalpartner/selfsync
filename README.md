@@ -49,6 +49,15 @@ docker run -d -p 8080:8080 -v ./data:/data selfsync
 
 Done. All your sync data now stays on your machine.
 
+### Migrating Existing Data
+
+Already syncing to Google and want to bring your data over? Nothing special to do:
+
+1. Launch the browser with `--sync-url=http://127.0.0.1:8080`
+2. Click your avatar → turn sync on (or off and back on if it's already enabled)
+
+Chrome uploads its local cache of bookmarks, passwords, and settings to your selfsync server. No export/import needed.
+
 ## Configuration
 
 | Variable | Default | Description |
