@@ -93,4 +93,6 @@ cargo test                                   # Run tests
 
 ## License
 
-[GPL-3.0](LICENSE)
+Copyright (C) 2026 Lee &lt;loyalpartner@163.com&gt;
+
+Licensed under [GPL-3.0-or-later](LICENSE).
