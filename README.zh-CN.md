@@ -4,6 +4,9 @@
 
 自托管的 Chrome 同步服务器。把书签、密码、设置等浏览器数据同步到自己的机器上，不经过 Google。
 
+> [!CAUTION]
+> **不要把这个服务暴露到公网。** selfsync 没有做任何认证——只要对方知道你的邮箱，就能读取甚至覆盖你同步的全部数据，包括保存的密码。请仅在可信的私有环境下运行（局域网、NAS、家里云），或者放在零信任隧道后面（Tailscale、Cloudflare Zero Trust、WireGuard 等）。
+
 ## 工作原理
 
 Chrome 本身就支持把同步数据发到自定义服务器（`--sync-url` 参数）。selfsync 实现了 Chrome 的同步协议，用一个 SQLite 文件把数据存在本地。多用户天然支持——Chrome 每次同步请求都会带上登录账号的邮箱。

@@ -4,6 +4,9 @@
 
 Self-hosted Chrome Sync server. Keep your bookmarks, passwords, preferences, and other browser data in sync across devices — without sending anything to Google.
 
+> [!CAUTION]
+> **Do NOT expose this server to the public internet.** selfsync performs no authentication — anyone who knows your email address can read and overwrite your synced data, including saved passwords. Only run it on trusted private networks (LAN, NAS, home lab) or behind a zero-trust tunnel (Tailscale, Cloudflare Zero Trust, WireGuard, etc.).
+
 ## How It Works
 
 Chrome natively supports syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file. Multi-user support works out of the box — Chrome sends the signed-in account email with every sync request.
