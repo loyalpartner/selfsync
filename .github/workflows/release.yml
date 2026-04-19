@@ -83,6 +83,7 @@ jobs:
         with:
           bin: selfsync-server
           target: ${{ matrix.target }}
+          build-tool: cargo-zigbuild
           archive: $bin-$tag-$target
           tar: unix
           zip: windows
