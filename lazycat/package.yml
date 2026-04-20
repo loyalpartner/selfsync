@@ -1,5 +1,5 @@
 package: cloud.lazycat.app.chromesync
-version: 0.1.0
+version: 0.1.1
 name: SelfSync
 description: 自托管 Chrome 同步服务器，让浏览器数据留在本地
 author: loyalpartner
