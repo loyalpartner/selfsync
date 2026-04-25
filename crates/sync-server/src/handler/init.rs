@@ -4,28 +4,55 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
 use crate::db::entity::sync_entity;
 use crate::proto::sync_pb;
-use crate::util::{BASE64, gen_id, now_millis};
+use crate::util::{BASE64, now_millis};
 
 const DATA_TYPE_NIGORI: i32 = 47745;
 const DATA_TYPE_BOOKMARK: i32 = 32904;
 
-/// Initialize permanent entities for a new user: Nigori + bookmark root + system folders.
+/// Initialize permanent entities for a new user: Nigori + bookmark permanent
+/// folders.
 pub async fn initialize_user_data(
     db: &DatabaseConnection,
     user_id: i32,
     encryption_key: &str,
     version: &mut i64,
 ) -> Result<()> {
-    let root_id =
-        create_permanent_bookmark(db, user_id, version, "google_chrome_bookmarks", "0").await?;
-
     create_nigori_node(db, user_id, version, encryption_key).await?;
-
-    for tag in &["bookmark_bar", "other_bookmarks", "synced_bookmarks"] {
-        create_permanent_bookmark(db, user_id, version, tag, &root_id).await?;
-    }
-
+    create_bookmark_permanent_folders(db, user_id, version).await?;
     tracing::info!(user_id, "initialized user data (nigori + bookmarks)");
+    Ok(())
+}
+
+async fn create_bookmark_permanent_folders(
+    db: &DatabaseConnection,
+    user_id: i32,
+    version: &mut i64,
+) -> Result<()> {
+    // Chromium loopback id format: "{datatype_field_number}|{server_tag}".
+    let root_id = create_permanent_bookmark(
+        db,
+        user_id,
+        version,
+        "google_chrome_bookmarks",
+        "Bookmarks",
+        "0",
+    )
+    .await?;
+    // Standard Chromium permanent bookmark folders. Edge additionally expects a
+    // 5th permanent folder `workspace_bookmarks` ("Workspaces") under the root —
+    // its BookmarkDataTypeProcessor enumerates that tag at initial-merge time
+    // and treats its absence as
+    // `kBookmarksInitialMergePermanentEntitiesMissing` (Type 64). Always
+    // including it is safe: Chromium ignores unknown server-defined permanent
+    // tags rather than rejecting them.
+    for (tag, name) in &[
+        ("bookmark_bar", "Bookmark Bar"),
+        ("other_bookmarks", "Other Bookmarks"),
+        ("synced_bookmarks", "Synced Bookmarks"),
+        ("workspace_bookmarks", "Workspaces"),
+    ] {
+        create_permanent_bookmark(db, user_id, version, tag, name, &root_id).await?;
+    }
     Ok(())
 }
 
@@ -34,9 +61,10 @@ async fn create_permanent_bookmark(
     user_id: i32,
     version: &mut i64,
     tag: &str,
+    name: &str,
     parent_id: &str,
 ) -> Result<String> {
-    let id_string = gen_id(Some(tag));
+    let id_string = format!("{DATA_TYPE_BOOKMARK}|{tag}");
     let now = now_millis();
 
     let specifics = sync_pb::EntitySpecifics {
@@ -54,7 +82,7 @@ async fn create_permanent_bookmark(
         version: Set(*version),
         ctime: Set(Some(now)),
         mtime: Set(Some(now)),
-        name: Set(Some(tag.to_string())),
+        name: Set(Some(name.to_string())),
         server_tag: Set(Some(tag.to_string())),
         specifics: Set(Some(specifics.encode_to_vec())),
         folder: Set(true),
@@ -72,7 +100,7 @@ async fn create_nigori_node(
     version: &mut i64,
     encryption_key: &str,
 ) -> Result<()> {
-    let id_string = gen_id(Some("nigori"));
+    let id_string = format!("{DATA_TYPE_NIGORI}|google_chrome_nigori");
     let now = now_millis();
 
     let nigori_specifics = build_nigori_specifics(encryption_key, now)?;
@@ -122,13 +150,11 @@ fn build_nigori_specifics(encryption_key: &str, now: i64) -> Result<sync_pb::Nig
         mac_key: Some(mac_key.to_vec()),
     };
 
-    // Encrypt keybag
     let keybag = sync_pb::NigoriKeyBag {
         key: vec![nigori_key.clone()],
     };
     let encrypted_keybag = nigori.encrypt(&keybag.encode_to_vec());
 
-    // Encrypt decryptor token (same key, without deprecated_name)
     #[allow(deprecated)]
     let mut decryptor_key = nigori_key.clone();
     #[allow(deprecated)]
@@ -137,14 +163,18 @@ fn build_nigori_specifics(encryption_key: &str, now: i64) -> Result<sync_pb::Nig
     }
     let encrypted_decryptor = nigori.encrypt(&decryptor_key.encode_to_vec());
 
-    // KEYSTORE_PASSPHRASE = 2 (from nigori_specifics.proto PassphraseType enum)
     Ok(sync_pb::NigoriSpecifics {
         encryption_keybag: Some(sync_pb::EncryptedData {
             key_name: Some(key_name.clone()),
             blob: Some(encrypted_keybag),
         }),
         keybag_is_frozen: Some(true),
-        encrypt_everything: Some(true),
+        // CRITICAL: encrypt_everything=false. selfsync sends plaintext
+        // BookmarkSpecifics; setting true here is a protocol contradiction
+        // (claims everything is encrypted while bookmarks ship as plaintext)
+        // that breaks BookmarkDataTypeProcessor initial merge in some clients
+        // (Edge in particular).
+        encrypt_everything: Some(false),
         passphrase_type: Some(sync_pb::nigori_specifics::PassphraseType::KeystorePassphrase as i32),
         keystore_decryptor_token: Some(sync_pb::EncryptedData {
             key_name: Some(key_name),

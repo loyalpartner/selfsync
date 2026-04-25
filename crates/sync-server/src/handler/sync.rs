@@ -22,8 +22,12 @@ pub async fn handle_command(
         }
     };
 
-    // Email from protobuf `share` field (Chrome sends the signed-in account email).
-    let email = if msg.share.is_empty() {
+    // Email from protobuf `share` field. Chrome sends the signed-in account
+    // email there, but Edge sends a base64 cache_guid (e.g.
+    // "YgtTggJVuyTHat..."). When `share` is not an email, fall back to
+    // DEFAULT_EMAIL so multiple Edge devices share one user record instead of
+    // each minting a fresh Nigori per device GUID.
+    let email = if msg.share.is_empty() || !is_email(&msg.share) {
         DEFAULT_EMAIL.to_string()
     } else {
         msg.share.clone()
@@ -40,7 +44,6 @@ pub async fn handle_command(
         }
     };
 
-    // Validate store_birthday
     if !msg
         .store_birthday
         .as_ref()
@@ -53,9 +56,23 @@ pub async fn handle_command(
         return (StatusCode::OK, resp.encode_to_vec());
     }
 
+    // Convoy / real Edge MSA populate ClientCommand and NewBagOfChips on every
+    // response. Chromium-based clients use them for sync scheduling and as a
+    // sanity check on server health.
+    let client_command = sync_pb::ClientCommand {
+        set_sync_poll_interval: Some(14400),
+        max_commit_batch_size: Some(100),
+        ..Default::default()
+    };
+    let new_bag_of_chips = sync_pb::ChipBag {
+        server_chips: Some(b"selfsync".to_vec()),
+    };
+
     let mut resp = sync_pb::ClientToServerResponse {
         error_code: Some(sync_pb::sync_enums::ErrorType::Success as i32),
         store_birthday: Some(user.store_birthday.clone()),
+        client_command: Some(client_command),
+        new_bag_of_chips: Some(new_bag_of_chips),
         ..Default::default()
     };
 
@@ -113,8 +130,12 @@ async fn find_or_create_user(db: &DatabaseConnection, email: &str) -> anyhow::Re
         return Ok(u);
     }
 
-    let prefix = (b'a' + uuid::Uuid::new_v4().as_bytes()[0] % 26) as char;
-    let birthday = format!("{prefix}{}", uuid::Uuid::new_v4());
+    // Match Microsoft Edge MSA sync server's wire format: it uses a fixed
+    // sentinel string `"ProductionEnvironmentDefinition"` as the store
+    // birthday for ALL users. Edge's BookmarkDataTypeProcessor may validate
+    // this exact value as part of its initial-merge sanity checks. Chromium
+    // clients accept any non-empty birthday so this is safe across both.
+    let birthday = "ProductionEnvironmentDefinition".to_string();
     let enc_key = gen_encryption_key();
     let mut next_version = 1i64;
 
@@ -128,15 +149,29 @@ async fn find_or_create_user(db: &DatabaseConnection, email: &str) -> anyhow::Re
     let u = new_user.insert(db).await?;
     tracing::info!(email, "created new user");
 
-    // Initialize permanent entities (nigori, bookmarks)
     super::init::initialize_user_data(db, u.id, &enc_key, &mut next_version).await?;
 
-    // Update next_version after entity initialization
     let mut active: user::ActiveModel = u.into();
     active.next_version = Set(next_version);
     let u = active.update(db).await?;
 
     Ok(u)
+}
+
+/// Returns true if `s` looks like an email: a single `@` with non-empty local
+/// and domain parts, and a `.` in the domain. Cheap heuristic, no RFC.
+fn is_email(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let Some(at) = bytes.iter().position(|&b| b == b'@') else {
+        return false;
+    };
+    if at == 0 || at == bytes.len() - 1 {
+        return false;
+    }
+    if bytes.iter().filter(|&&b| b == b'@').count() != 1 {
+        return false;
+    }
+    bytes[at + 1..].contains(&b'.')
 }
 
 fn message_type_name(contents: i32) -> &'static str {

@@ -9,6 +9,7 @@ use crate::progress::Progress;
 use crate::proto::sync_pb;
 
 const PAGE_SIZE: u64 = 100;
+const DATA_TYPE_NIGORI: i32 = 47745;
 
 /// Handle a GET_UPDATES message: return entities newer than the client's progress tokens.
 pub async fn handle(
@@ -68,11 +69,18 @@ pub async fn handle(
         }
     }
 
-    // Return encryption keys for NEW_CLIENT that needs them
-    let is_new_client =
-        msg.get_updates_origin == Some(sync_pb::sync_enums::GetUpdatesOrigin::NewClient as i32);
+    // Send keystore keys whenever the client subscribes to NIGORI. Chromium
+    // loopback only sends them on NEW_CLIENT + need_encryption_key, but that
+    // leaves clients stuck if they fetched the Nigori in an earlier round and
+    // never got the keys (e.g. a GU_TRIGGER resume that never sets
+    // need_encryption_key). The keys are tiny — sending on every NIGORI-bearing
+    // request is the simplest fix that unblocks `cryptographer_has_pending_keys`.
+    let client_subscribes_nigori = msg
+        .from_progress_marker
+        .iter()
+        .any(|m| m.data_type_id == Some(DATA_TYPE_NIGORI));
     let need_key = msg.need_encryption_key.unwrap_or(false);
-    let encryption_keys = if is_new_client && need_key {
+    let encryption_keys = if client_subscribes_nigori || need_key {
         vec![user.encryption_key.as_bytes().to_vec()]
     } else {
         vec![]

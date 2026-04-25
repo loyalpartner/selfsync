@@ -33,6 +33,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/command", post(handler::handle_command))
         .route("/chrome-sync/command/", post(handler::handle_command))
         .route("/chrome-sync/command", post(handler::handle_command))
+        // Edge sync endpoint. Edge derives from Chromium, so when --sync-url is
+        // set to ".../v1/feeds/me/syncEntities" the engine appends /command/.
+        .route(
+            "/v1/feeds/me/syncEntities/command/",
+            post(handler::handle_command),
+        )
+        .route(
+            "/v1/feeds/me/syncEntities/command",
+            post(handler::handle_command),
+        )
         .layer(RequestDecompressionLayer::new())
         .layer(Extension(db));
 

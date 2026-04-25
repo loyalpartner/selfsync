@@ -2,11 +2,17 @@ use base64::Engine;
 pub(crate) use base64::engine::general_purpose::STANDARD as BASE64;
 
 /// Generate a server-assigned entity ID: base64(prefix + uuid).
+///
+/// `prefix` is truncated to up to 8 *characters* (not bytes) for readability —
+/// byte-based slicing would panic on multi-byte UTF-8 (Chinese, emoji, zero-
+/// width joiners, etc.) when bookmark titles like "常见工作流程" come in.
 pub(crate) fn gen_id(prefix: Option<&str>) -> String {
     let uuid = uuid::Uuid::new_v4().to_string();
     let raw = match prefix {
-        Some(p) if p.len() >= 8 => format!("{}{}", &p[..8], uuid),
-        Some(p) if !p.is_empty() => format!("{p}{uuid}"),
+        Some(p) if !p.is_empty() => {
+            let head: String = p.chars().take(8).collect();
+            format!("{head}{uuid}")
+        }
         _ => uuid,
     };
     BASE64.encode(raw.as_bytes())
