@@ -18,12 +18,16 @@ pub async fn list_users(Extension(db): Extension<DatabaseConnection>) -> Html<St
         html.push_str("<p>No users yet.</p>");
     } else {
         html.push_str(
-            "<table><tr><th>ID</th><th>Email</th><th>Store Birthday</th><th>Next Version</th></tr>",
+            "<table><tr><th>ID</th><th>Email</th><th>Browser</th><th>Store Birthday</th><th>Next Version</th></tr>",
         );
         for u in &users {
             html.push_str(&format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                u.id, u.email, u.store_birthday, u.next_version
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                u.id,
+                html_escape::encode_text(&u.email),
+                html_escape::encode_text(&u.browser_kind),
+                html_escape::encode_text(&u.store_birthday),
+                u.next_version,
             ));
         }
         html.push_str("</table>");

@@ -7,7 +7,8 @@ edition = "2024"
 anyhow = "1"
 axum = "0.8"
 base64 = "0.22"
-bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+html-escape = "0.2"
 prost = "0.13"
 rand = "0.9"
 sea-orm = { version = "1", features = [
@@ -15,7 +16,11 @@ sea-orm = { version = "1", features = [
     "runtime-tokio-rustls",
     "macros",
 ] }
-sea-orm-migration = "1"
+sea-orm-migration = { version = "1", default-features = false, features = [
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+] }
+async-trait = "0.1"
 selfsync-nigori = { path = "../nigori" }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["decompression-gzip"] }

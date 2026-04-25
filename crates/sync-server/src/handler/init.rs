@@ -2,24 +2,44 @@ use anyhow::Result;
 use prost::Message;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
-use crate::db::entity::sync_entity;
+use crate::auth::BrowserKind;
+use crate::db::entity::{sync_entity, user};
 use crate::proto::sync_pb;
 use crate::util::{BASE64, now_millis};
+
 
 const DATA_TYPE_NIGORI: i32 = 47745;
 const DATA_TYPE_BOOKMARK: i32 = 32904;
 
-/// Initialize permanent entities for a new user: Nigori + bookmark permanent
-/// folders.
+/// Permanent bookmark folders, in stable order. Edge gets one extra entry
+/// (`workspace_bookmarks`); its BookmarkDataTypeProcessor enumerates that
+/// tag at initial-merge time and treats its absence as
+/// `kBookmarksInitialMergePermanentEntitiesMissing` (the Type 64 trap).
+/// Chromium ignores unknown server-defined permanent tags, so the extra
+/// folder is harmless even if a non-Edge browser somehow lands here — but
+/// we still gate it on `BrowserKind::Edge` to keep each browser's DB clean.
+const STANDARD_BOOKMARK_FOLDERS: &[(&str, &str)] = &[
+    ("bookmark_bar", "Bookmark Bar"),
+    ("other_bookmarks", "Other Bookmarks"),
+    ("synced_bookmarks", "Synced Bookmarks"),
+];
+const EDGE_EXTRA_BOOKMARK_FOLDER: (&str, &str) = ("workspace_bookmarks", "Workspaces");
+
+/// Seed permanent entities for a freshly-created user.
 pub async fn initialize_user_data(
     db: &DatabaseConnection,
-    user_id: i32,
+    user: &user::Model,
     encryption_key: &str,
     version: &mut i64,
 ) -> Result<()> {
-    create_nigori_node(db, user_id, version, encryption_key).await?;
-    create_bookmark_permanent_folders(db, user_id, version).await?;
-    tracing::info!(user_id, "initialized user data (nigori + bookmarks)");
+    let browser = user.browser();
+    create_nigori_node(db, user.id, version, encryption_key, browser).await?;
+    create_bookmark_permanent_folders(db, user.id, version, browser).await?;
+    tracing::info!(
+        user_id = user.id,
+        %browser,
+        "initialized user data (nigori + bookmarks)"
+    );
     Ok(())
 }
 
@@ -27,8 +47,8 @@ async fn create_bookmark_permanent_folders(
     db: &DatabaseConnection,
     user_id: i32,
     version: &mut i64,
+    browser: BrowserKind,
 ) -> Result<()> {
-    // Chromium loopback id format: "{datatype_field_number}|{server_tag}".
     let root_id = create_permanent_bookmark(
         db,
         user_id,
@@ -38,19 +58,11 @@ async fn create_bookmark_permanent_folders(
         "0",
     )
     .await?;
-    // Standard Chromium permanent bookmark folders. Edge additionally expects a
-    // 5th permanent folder `workspace_bookmarks` ("Workspaces") under the root —
-    // its BookmarkDataTypeProcessor enumerates that tag at initial-merge time
-    // and treats its absence as
-    // `kBookmarksInitialMergePermanentEntitiesMissing` (Type 64). Always
-    // including it is safe: Chromium ignores unknown server-defined permanent
-    // tags rather than rejecting them.
-    for (tag, name) in &[
-        ("bookmark_bar", "Bookmark Bar"),
-        ("other_bookmarks", "Other Bookmarks"),
-        ("synced_bookmarks", "Synced Bookmarks"),
-        ("workspace_bookmarks", "Workspaces"),
-    ] {
+    for (tag, name) in STANDARD_BOOKMARK_FOLDERS {
+        create_permanent_bookmark(db, user_id, version, tag, name, &root_id).await?;
+    }
+    if browser == BrowserKind::Edge {
+        let (tag, name) = EDGE_EXTRA_BOOKMARK_FOLDER;
         create_permanent_bookmark(db, user_id, version, tag, name, &root_id).await?;
     }
     Ok(())
@@ -64,6 +76,9 @@ async fn create_permanent_bookmark(
     name: &str,
     parent_id: &str,
 ) -> Result<String> {
+    // Chromium loopback's `PersistentPermanentEntity` id format:
+    //   "{datatype_field_number}|{server_tag}"
+    // e.g. "32904|google_chrome_bookmarks", "32904|bookmark_bar".
     let id_string = format!("{DATA_TYPE_BOOKMARK}|{tag}");
     let now = now_millis();
 
@@ -74,7 +89,7 @@ async fn create_permanent_bookmark(
         ..Default::default()
     };
 
-    let entity = sync_entity::ActiveModel {
+    sync_entity::ActiveModel {
         user_id: Set(user_id),
         id_string: Set(id_string.clone()),
         parent_id_string: Set(Some(parent_id.to_string())),
@@ -88,8 +103,9 @@ async fn create_permanent_bookmark(
         folder: Set(true),
         deleted: Set(false),
         ..Default::default()
-    };
-    entity.insert(db).await?;
+    }
+    .insert(db)
+    .await?;
     *version += 1;
     Ok(id_string)
 }
@@ -99,21 +115,23 @@ async fn create_nigori_node(
     user_id: i32,
     version: &mut i64,
     encryption_key: &str,
+    browser: BrowserKind,
 ) -> Result<()> {
+    // Loopback-style id: "{datatype_field_number}|google_chrome_nigori".
     let id_string = format!("{DATA_TYPE_NIGORI}|google_chrome_nigori");
     let now = now_millis();
 
-    let nigori_specifics = build_nigori_specifics(encryption_key, now)?;
     let specifics = sync_pb::EntitySpecifics {
         specifics_variant: Some(sync_pb::entity_specifics::SpecificsVariant::Nigori(
-            nigori_specifics,
+            build_nigori_for(browser, encryption_key, now)?,
         )),
         ..Default::default()
     };
 
-    let entity = sync_entity::ActiveModel {
+    sync_entity::ActiveModel {
         user_id: Set(user_id),
         id_string: Set(id_string),
+        // Chromium loopback uses empty string for top-level Nigori parent.
         parent_id_string: Set(Some(String::new())),
         data_type_id: Set(DATA_TYPE_NIGORI),
         version: Set(*version),
@@ -125,14 +143,51 @@ async fn create_nigori_node(
         folder: Set(true),
         deleted: Set(false),
         ..Default::default()
-    };
-    entity.insert(db).await?;
+    }
+    .insert(db)
+    .await?;
     *version += 1;
     Ok(())
 }
 
-/// Build NigoriSpecifics with keystore passphrase encryption.
-fn build_nigori_specifics(encryption_key: &str, now: i64) -> Result<sync_pb::NigoriSpecifics> {
+/// Pick the Nigori shape that the browser's cryptographer will accept.
+///
+/// - Edge uses MSA-managed keystore keys and rejects any server-built
+///   keybag (cryptographer stays pending forever). Emit an empty
+///   IMPLICIT_PASSPHRASE Nigori so Edge enters Chromium's
+///   client-initialization fall-through in
+///   `nigori_sync_bridge_impl.cc::MergeFullSyncData` and supplies its own
+///   keybag derived from MSA keys.
+/// - Chromium-family browsers accept the standard KEYSTORE_PASSPHRASE flow
+///   with the server-issued encryption key.
+fn build_nigori_for(
+    browser: BrowserKind,
+    encryption_key: &str,
+    now: i64,
+) -> Result<sync_pb::NigoriSpecifics> {
+    match browser {
+        BrowserKind::Edge => Ok(empty_implicit_nigori()),
+        BrowserKind::Chromium => keystore_nigori(encryption_key, now),
+    }
+}
+
+/// Empty IMPLICIT_PASSPHRASE NigoriSpecifics. Triggers Chromium's client-side
+/// init path: the client uses its own keystore_keys to derive a fresh keybag
+/// and commits it back. See `MergeFullSyncData` fall-through.
+fn empty_implicit_nigori() -> sync_pb::NigoriSpecifics {
+    sync_pb::NigoriSpecifics {
+        encryption_keybag: Some(sync_pb::EncryptedData {
+            key_name: Some(String::new()),
+            blob: Some(String::new()),
+        }),
+        passphrase_type: Some(sync_pb::nigori_specifics::PassphraseType::ImplicitPassphrase as i32),
+        ..Default::default()
+    }
+}
+
+/// NigoriSpecifics with keystore passphrase encryption derived from the
+/// server-issued key.
+fn keystore_nigori(encryption_key: &str, now: i64) -> Result<sync_pb::NigoriSpecifics> {
     use base64::Engine;
     use selfsync_nigori::{KeyDerivationParams, Nigori};
 
@@ -169,11 +224,11 @@ fn build_nigori_specifics(encryption_key: &str, now: i64) -> Result<sync_pb::Nig
             blob: Some(encrypted_keybag),
         }),
         keybag_is_frozen: Some(true),
-        // CRITICAL: encrypt_everything=false. selfsync sends plaintext
-        // BookmarkSpecifics; setting true here is a protocol contradiction
-        // (claims everything is encrypted while bookmarks ship as plaintext)
-        // that breaks BookmarkDataTypeProcessor initial merge in some clients
-        // (Edge in particular).
+        // CRITICAL: encrypt_everything=false. Real MSA wire uses false, and
+        // selfsync sends plaintext BookmarkSpecifics — setting true here is a
+        // protocol contradiction (says everything is encrypted, but bookmark
+        // entities are sent in plaintext) that breaks BookmarkDataTypeProcessor
+        // initial merge in some clients.
         encrypt_everything: Some(false),
         passphrase_type: Some(sync_pb::nigori_specifics::PassphraseType::KeystorePassphrase as i32),
         keystore_decryptor_token: Some(sync_pb::EncryptedData {

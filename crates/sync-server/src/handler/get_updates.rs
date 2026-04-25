@@ -20,6 +20,7 @@ pub async fn handle(
     let mut all_entries = Vec::new();
     let mut new_markers = Vec::new();
     let mut total_remaining: i64 = 0;
+    let mut response_has_keystore_nigori = false;
 
     for marker in &msg.from_progress_marker {
         let data_type_id = marker.data_type_id.unwrap_or(0);
@@ -65,26 +66,49 @@ pub async fn handle(
         });
 
         for entity in entities.into_iter().take(count) {
-            all_entries.push(db_entity_to_proto(entity));
+            let proto = db_entity_to_proto(entity);
+            tracing::debug!(
+                user_id = user.id,
+                dtype = data_type_id,
+                version = proto.version.unwrap_or(0),
+                server_tag = proto.server_defined_unique_tag.as_deref().unwrap_or(""),
+                id = proto.id_string.as_deref().unwrap_or(""),
+                "get_updates returning entity"
+            );
+            if is_keystore_nigori(&proto) {
+                response_has_keystore_nigori = true;
+            }
+            all_entries.push(proto);
         }
     }
 
-    // Send keystore keys whenever the client subscribes to NIGORI. Chromium
-    // loopback only sends them on NEW_CLIENT + need_encryption_key, but that
-    // leaves clients stuck if they fetched the Nigori in an earlier round and
-    // never got the keys (e.g. a GU_TRIGGER resume that never sets
-    // need_encryption_key). The keys are tiny — sending on every NIGORI-bearing
-    // request is the simplest fix that unblocks `cryptographer_has_pending_keys`.
+    // Send keystore keys whenever the client is sync'ing the NIGORI data type.
+    // Chromium loopback_server only sends them when the response includes a
+    // KEYSTORE Nigori entity, but that leaves clients stuck if they fetched the
+    // Nigori in an earlier round and never got the keys (e.g. Edge resuming with
+    // a GU_TRIGGER instead of NEW_CLIENT, which never sets need_encryption_key).
+    // The keys are tiny; sending them on every NIGORI-bearing request is the
+    // simplest fix that unblocks `cryptographer_has_pending_keys=true`.
     let client_subscribes_nigori = msg
         .from_progress_marker
         .iter()
         .any(|m| m.data_type_id == Some(DATA_TYPE_NIGORI));
     let need_key = msg.need_encryption_key.unwrap_or(false);
-    let encryption_keys = if client_subscribes_nigori || need_key {
+    let encryption_keys = if response_has_keystore_nigori || need_key || client_subscribes_nigori {
         vec![user.encryption_key.as_bytes().to_vec()]
     } else {
         vec![]
     };
+
+    tracing::debug!(
+        user_id = user.id,
+        response_has_keystore_nigori,
+        need_key,
+        client_subscribes_nigori,
+        keys_sent = encryption_keys.len(),
+        key_byte_len = encryption_keys.first().map(|k| k.len()).unwrap_or(0),
+        "get_updates encryption_keys decision"
+    );
 
     Ok(sync_pb::GetUpdatesResponse {
         entries: all_entries,
@@ -93,6 +117,19 @@ pub async fn handle(
         encryption_keys,
         ..Default::default()
     })
+}
+
+fn is_keystore_nigori(entity: &sync_pb::SyncEntity) -> bool {
+    let Some(specifics) = entity.specifics.as_ref() else {
+        return false;
+    };
+    let Some(sync_pb::entity_specifics::SpecificsVariant::Nigori(nigori)) =
+        specifics.specifics_variant.as_ref()
+    else {
+        return false;
+    };
+    nigori.passphrase_type
+        == Some(sync_pb::nigori_specifics::PassphraseType::KeystorePassphrase as i32)
 }
 
 fn db_entity_to_proto(entity: sync_entity::Model) -> sync_pb::SyncEntity {
