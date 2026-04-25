@@ -44,8 +44,8 @@ selfsync/
 │           │   ├── entity/          # sea-orm Models (user has browser() helper)
 │           │   └── migrator/        # sea-orm-migration files
 │           └── handler/
-│               ├── mod.rs       # log_request middleware + Diagnostic stub
-│               ├── sync.rs      # POST /command/ dispatch
+│               ├── mod.rs       # log_request middleware
+│               ├── sync.rs      # POST /command dispatch
 │               ├── commit.rs    # COMMIT: create/update entities
 │               ├── get_updates.rs # GET_UPDATES: fetch by version
 │               ├── init.rs      # User initialization (Nigori + bookmarks per browser)
@@ -55,10 +55,9 @@ selfsync/
 ## Sync Server
 
 - **User identity**: `(email, browser_kind)` composite key. Edge `a@b.com` and Chromium `a@b.com` are distinct user rows by design — incompatible cryptographers and permanent folder sets.
-- **Endpoints**:
-  - `POST /command/`, `POST /chrome-sync/command/` — Chromium-family entry points
-  - `POST /v1/feeds/me/syncEntities[/command][/]` — Edge entry point variants
-  - `POST /sync/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` — Edge MSA stub returning fixed 6-byte success envelope (required for BookmarkDataTypeController init only)
+- **Endpoints** (trailing slashes are stripped by `NormalizePathLayer`, so browser-appended `/command/` matches `/command`):
+  - `POST /command`, `POST /chrome-sync/command` — Chromium-family entry points
+  - `POST /v1/feeds/me/syncEntities/command` — Edge entry point (Edge sets `--sync-url=".../v1/feeds/me/syncEntities"`; engine appends `/command/`)
   - `GET /` — HTML user dashboard
   - `GET /healthz` — liveness check
 - **Auth**: `auth::ClientIdentity::from_request` parses `(email, browser)` per request. Email from protobuf `share` (Chromium puts the signed-in account email; Edge puts a base64 cache_guid → fallback to `anonymous@localhost`). Browser from `X-AFS-ClientInfo: app=Microsoft Edge` (Edge sets this; vanilla Chromium omits it).

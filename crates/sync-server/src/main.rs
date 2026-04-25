@@ -10,7 +10,8 @@ use axum::{
     routing::{get, post},
 };
 use clap::Parser;
-use tower_http::decompression::RequestDecompressionLayer;
+use tower::Layer;
+use tower_http::{decompression::RequestDecompressionLayer, normalize_path::NormalizePathLayer};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -45,50 +46,29 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(handler::list_users))
         .route("/healthz", get(|| async { "ok" }))
-        .route("/command/", post(handler::handle_command))
         .route("/command", post(handler::handle_command))
-        .route("/chrome-sync/command/", post(handler::handle_command))
         .route("/chrome-sync/command", post(handler::handle_command))
         // Edge sync endpoint. Edge derives from Chromium, so when --sync-url is
         // set to ".../v1/feeds/me/syncEntities" the engine appends /command/.
-        // Also accept the bare path in case Edge POSTs there directly.
-        .route(
-            "/v1/feeds/me/syncEntities/command/",
-            post(handler::handle_command),
-        )
         .route(
             "/v1/feeds/me/syncEntities/command",
             post(handler::handle_command),
-        )
-        .route("/v1/feeds/me/syncEntities/", post(handler::handle_command))
-        .route("/v1/feeds/me/syncEntities", post(handler::handle_command))
-        // Edge MSA private endpoint — observed via relay capture. Edge calls
-        // this during sync init in addition to /command/. Returning 404 here
-        // failed only the BookmarkDataTypeController. Real MSA emits both
-        // single- and double-slash variants depending on URL concatenation.
-        .route(
-            "/sync/v1/diagnosticData/Diagnostic.SendCheckResult()/",
-            post(handler::handle_diagnostic_check_result),
-        )
-        .route(
-            "/sync/v1/diagnosticData/Diagnostic.SendCheckResult()",
-            post(handler::handle_diagnostic_check_result),
-        )
-        .route(
-            "/v1/diagnosticData/Diagnostic.SendCheckResult()/",
-            post(handler::handle_diagnostic_check_result),
-        )
-        .route(
-            "/v1/diagnosticData/Diagnostic.SendCheckResult()",
-            post(handler::handle_diagnostic_check_result),
         )
         .layer(middleware::from_fn(handler::log_request))
         .layer(RequestDecompressionLayer::new())
         .layer(Extension(db));
 
+    // Browsers append a trailing slash (`/command/`); normalize it away so the
+    // route table only declares the slashless form.
+    let app = NormalizePathLayer::trim_trailing_slash().layer(app);
+
     let listener = tokio::net::TcpListener::bind(&cli.addr).await?;
     tracing::info!(bind_addr = %cli.addr, "selfsync server listening");
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        axum::ServiceExt::<axum::extract::Request>::into_make_service(app),
+    )
+    .await?;
 
     Ok(())
 }

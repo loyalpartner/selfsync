@@ -23,7 +23,11 @@ sea-orm-migration = { version = "1", default-features = false, features = [
 async-trait = "0.1"
 selfsync-nigori = { path = "../nigori" }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["decompression-gzip"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+    "decompression-gzip",
+    "normalize-path",
+] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
