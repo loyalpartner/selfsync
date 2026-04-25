@@ -33,4 +33,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
+heck = "0.5"
 prost-build = "0.13"
+prost-types = "0.13"

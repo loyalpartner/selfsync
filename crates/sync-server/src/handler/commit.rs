@@ -8,7 +8,7 @@ use sea_orm::{
 };
 
 use crate::db::entity::{sync_entity, user};
-use crate::proto::sync_pb;
+use crate::proto::{extract_data_type_id, sync_pb};
 use crate::util::gen_id;
 
 /// Handle a COMMIT message: create or update sync entities.
@@ -178,60 +178,5 @@ fn conflict_response(id_string: &str, version: i64) -> sync_pb::commit_response:
         id_string: Some(id_string.to_string()),
         version: Some(version),
         ..Default::default()
-    }
-}
-
-/// Extract data type ID from EntitySpecifics using the oneof variant's tag number.
-fn extract_data_type_id(entry: &sync_pb::SyncEntity) -> i32 {
-    let Some(specifics) = &entry.specifics else {
-        return 0;
-    };
-    let Some(ref variant) = specifics.specifics_variant else {
-        return 0;
-    };
-
-    use sync_pb::entity_specifics::SpecificsVariant;
-    match variant {
-        SpecificsVariant::Autofill(_) => 31729,
-        SpecificsVariant::Bookmark(_) => 32904,
-        SpecificsVariant::Preference(_) => 37702,
-        SpecificsVariant::ThemeAndroid(_) => 1587331,
-        SpecificsVariant::ThemeIos(_) => 1577986,
-        SpecificsVariant::Theme(_) => 41210,
-        SpecificsVariant::Password(_) => 45873,
-        SpecificsVariant::Nigori(_) => 47745,
-        SpecificsVariant::Extension(_) => 48119,
-        SpecificsVariant::App(_) => 48364,
-        SpecificsVariant::Session(_) => 50119,
-        SpecificsVariant::AutofillProfile(_) => 63951,
-        SpecificsVariant::SearchEngine(_) => 88610,
-        SpecificsVariant::ExtensionSetting(_) => 96159,
-        SpecificsVariant::AppSetting(_) => 103656,
-        SpecificsVariant::HistoryDeleteDirective(_) => 150251,
-        SpecificsVariant::DeviceInfo(_) => 154522,
-        SpecificsVariant::PriorityPreference(_) => 163425,
-        SpecificsVariant::Dictionary(_) => 170540,
-        SpecificsVariant::ManagedUserSetting(_) => 186662,
-        SpecificsVariant::AppList(_) => 229170,
-        SpecificsVariant::AutofillWallet(_) => 306270,
-        SpecificsVariant::WalletMetadata(_) => 330441,
-        SpecificsVariant::ArcPackage(_) => 340906,
-        SpecificsVariant::Printer(_) => 410745,
-        SpecificsVariant::ReadingList(_) => 411028,
-        SpecificsVariant::UserEvent(_) => 455206,
-        SpecificsVariant::UserConsent(_) => 556014,
-        SpecificsVariant::SendTabToSelf(_) => 601980,
-        SpecificsVariant::SecurityEvent(_) => 600372,
-        SpecificsVariant::WebApk(_) => 1117170,
-        SpecificsVariant::WebApp(_) => 673225,
-        SpecificsVariant::WifiConfiguration(_) => 662827,
-        SpecificsVariant::OsPreference(_) => 702141,
-        SpecificsVariant::OsPriorityPreference(_) => 703915,
-        SpecificsVariant::SharingMessage(_) => 728866,
-        SpecificsVariant::AutofillOffer(_) => 774329,
-        SpecificsVariant::WorkspaceDesk(_) => 874841,
-        SpecificsVariant::WebauthnCredential(_) => 895275,
-        SpecificsVariant::History(_) => 963985,
-        _ => 0,
     }
 }
