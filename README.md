@@ -2,93 +2,124 @@
 
 [中文文档](README.zh-CN.md)
 
-Self-hosted Chrome Sync server. Keep your bookmarks, passwords, preferences, and other browser data in sync across devices — without sending anything to Google.
+Self-hosted Chrome / Edge sync server. Keep your bookmarks, passwords, preferences, and other browser data in sync across devices — without sending anything to Google or Microsoft.
 
 > [!CAUTION]
-> **Do NOT expose this server to the public internet.** selfsync performs no authentication — anyone who knows your email address can read and overwrite your synced data, including saved passwords. Only run it on trusted private networks (LAN, NAS, home lab) or behind a zero-trust tunnel (Tailscale, Cloudflare Zero Trust, WireGuard, etc.).
+> **Do NOT expose this server to the public internet.** selfsync performs no authentication — anyone who can reach the port can read and overwrite synced data, including saved passwords. Run it on trusted private networks (LAN, NAS, home lab) or behind a zero-trust tunnel (Tailscale, Cloudflare Zero Trust, WireGuard).
 
 ## How It Works
 
-Chrome natively supports syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file. Multi-user support works out of the box — Chrome sends the signed-in account email with every sync request.
+Chromium-family browsers natively support syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file.
+
+Per-user records use the composite key `(email, browser_kind)`: Edge with `alice@example.com` and Chrome with `alice@example.com` are **separate** user rows in the database, because the two browsers use incompatible cryptographers and ship different permanent bookmark folders. Trying to share one row would corrupt sync state on every commit.
+
+## Browser Support
+
+Only Chrome and Edge are tested. Other Chromium-derived browsers (Brave, Vivaldi, Arc, Opera, …) are likely to work because the server treats anything without an `X-AFS-ClientInfo: app=Microsoft Edge` header as standard Chromium — but we have not verified them.
+
+| Browser | Sync works | Multi-user | Notes |
+|---|---|---|---|
+| Chrome | ✅ | ✅ per email | Standard path |
+| **Microsoft Edge** | ✅ | ❌ **single user only** | See below |
+
+### Edge Limitation
+
+Edge **does not send the signed-in account email** in its sync requests. Where vanilla Chromium puts your Google account email in the protobuf `share` field, Edge puts a base64-encoded device GUID. selfsync has no way to recover the real account from that, so **all Edge devices fall into one shared user record** (`anonymous@localhost`, `browser_kind=edge`).
+
+What this means in practice:
+
+- ✅ **Multiple Edge devices for the same person** sync correctly with each other — the shared record is exactly what you want.
+- ⚠️ **Multiple Edge users on the same selfsync instance** end up sharing one merged dataset (their bookmarks, passwords, etc. all converge into the same record). If you need user separation, run one selfsync instance per user (different port / DB file / container).
+- ✅ **Edge and Chrome on the same person's account** are kept isolated — they are independent user rows by design (incompatible Nigori encryption).
 
 ## Quick Start
 
-### Option 1: Build from Source
-
-```bash
-# Build
-cargo build --release
-
-# Start the server
-./target/release/selfsync-server
-
-# Launch Chrome pointing to your server
-google-chrome-stable --sync-url=http://127.0.0.1:8080
-```
-
-### Option 2: Docker Compose (Recommended)
+### Option 1: Docker Compose (recommended)
 
 ```bash
 docker compose up -d
 ```
 
-One command. Data is automatically persisted to a Docker volume.
+Data is persisted to a Docker volume.
 
-### Option 3: Docker
+### Option 2: Docker
 
 ```bash
-# Build the image
 docker build -t selfsync .
-
-# Run (data stored in ./data)
 docker run -d -p 8080:8080 -v ./data:/data selfsync
 ```
 
-### Start Syncing
+### Option 3: Build from source
 
-1. Open Chrome with `--sync-url=http://127.0.0.1:8080`
-2. Sign in with your Google account
-3. Enable sync
+```bash
+cargo build --release
+./target/release/selfsync-server
+```
 
-Done. All your sync data now stays on your machine.
+### Point your browser at the server
 
-### Migrating Existing Data
+**Chrome / Chromium:**
 
-Already syncing to Google and want to bring your data over? Nothing special to do:
+```bash
+google-chrome-stable --sync-url=http://127.0.0.1:8080
+```
 
-1. Launch the browser with `--sync-url=http://127.0.0.1:8080`
-2. Click your avatar → turn sync on (or off and back on if it's already enabled)
+**Microsoft Edge:**
 
-Chrome uploads its local cache of bookmarks, passwords, and settings to your selfsync server. No export/import needed.
+```bash
+microsoft-edge --sync-url=http://127.0.0.1:8080
+```
+
+Then sign in (any account) and turn sync on. Chrome will upload its local bookmarks / passwords / settings to selfsync. No export/import needed.
 
 ## Configuration
 
+<!-- AUTO-GENERATED:cli-env -->
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SELFSYNC_ADDR` | `127.0.0.1:8080` | Server listen address |
+| `SELFSYNC_ADDR` | `127.0.0.1:8080` | TCP address to bind |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite database path |
-| `RUST_LOG` | `selfsync_server=info` | Log level |
+| `RUST_LOG` | `selfsync_server=info,http=info` | Log filter (tracing-subscriber syntax) |
+<!-- /AUTO-GENERATED -->
 
-When running via Docker, the database defaults to `/data/selfsync.db` and listens on `0.0.0.0:8080`.
+In the Docker image the defaults are overridden to `0.0.0.0:8080` and `/data/selfsync.db`.
 
-## Multi-User
+## Endpoints
 
-Multi-user works automatically. Chrome includes the signed-in Google account email in every sync request (via the protobuf `share` field). The server uses this to create separate data stores per user — no additional configuration needed.
+<!-- AUTO-GENERATED:routes -->
+| Path | Method | Purpose |
+|---|---|---|
+| `/` | GET | HTML user dashboard |
+| `/healthz` | GET | Liveness check (returns `ok`) |
+| `/command/`, `/command` | POST | Chrome sync protocol entry point |
+| `/chrome-sync/command/`, `/chrome-sync/command` | POST | Alternate path (works with `--sync-url=http://host:port/chrome-sync`) |
+| `/v1/feeds/me/syncEntities[/command][/]` | POST | Edge sync path variants |
+| `/sync/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | Edge MSA private endpoint stub (returns the same 6-byte success envelope as real MSA — required for `BookmarkDataTypeController` initialization) |
+| `/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | Same, alternate prefix |
+<!-- /AUTO-GENERATED -->
 
 ## Things to Watch Out For
 
-- **Do NOT include `/command/` in `--sync-url`**. Chrome appends it automatically. Just use `http://127.0.0.1:8080`.
-- **After resetting the server database**, use a fresh Chrome profile (`--user-data-dir=/tmp/test`) to avoid stale sync state.
+- **Do NOT include `/command/` in `--sync-url`**. The browser appends it. Use `http://127.0.0.1:8080`.
+- **After resetting the server database**, use a fresh browser profile (`--user-data-dir=/tmp/test`) to avoid stale local sync state.
+- **Upgrading from v0.1.1**: just replace the binary. Schema migrations run automatically — no need to delete `selfsync.db`.
 
 ## Building
 
-Requires Rust 1.85+:
+Requires Rust 1.85+.
 
-```bash
-cargo build --release                        # Build everything
-cargo build --release -p selfsync-server     # Server only
-cargo test                                   # Run tests
-```
+<!-- AUTO-GENERATED:cargo -->
+| Command | Purpose |
+|---|---|
+| `cargo build --release` | Build the workspace |
+| `cargo build --release -p selfsync-server` | Build the server only |
+| `cargo test` | Run unit tests |
+| `cargo clippy --all-targets -- -D warnings` | Strict lint check |
+<!-- /AUTO-GENERATED -->
+
+## Architecture
+
+For protocol details, browser-specific quirks (Edge MSA Nigori, `workspace_bookmarks`), database schema, and migration internals, see [docs/architecture.md](docs/architecture.md).
 
 ## Prior Art
 

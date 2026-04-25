@@ -22,7 +22,12 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Users::Email).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(Users::Email)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(ColumnDef::new(Users::StoreBirthday).string().not_null())
                     .col(
                         ColumnDef::new(Users::NextVersion)
@@ -54,7 +59,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(SyncEntities::UserId).integer().not_null())
                     .col(ColumnDef::new(SyncEntities::IdString).string().not_null())
                     .col(ColumnDef::new(SyncEntities::ParentIdString).string().null())
-                    .col(ColumnDef::new(SyncEntities::DataTypeId).integer().not_null())
+                    .col(
+                        ColumnDef::new(SyncEntities::DataTypeId)
+                            .integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(SyncEntities::Version)
                             .big_integer()

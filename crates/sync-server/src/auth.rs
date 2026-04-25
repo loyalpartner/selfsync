@@ -72,11 +72,9 @@ fn detect_browser(headers: &HeaderMap) -> BrowserKind {
         .get("x-afs-clientinfo")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let app = raw.split(';').find_map(|part| {
-        part.trim()
-            .strip_prefix("app=")
-            .map(|v| v.trim())
-    });
+    let app = raw
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("app=").map(|v| v.trim()));
     match app {
         Some(name) if name.eq_ignore_ascii_case("Microsoft Edge") => BrowserKind::Edge,
         _ => BrowserKind::Chromium,

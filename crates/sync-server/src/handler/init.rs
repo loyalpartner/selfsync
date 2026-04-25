@@ -7,7 +7,6 @@ use crate::db::entity::{sync_entity, user};
 use crate::proto::sync_pb;
 use crate::util::{BASE64, now_millis};
 
-
 const DATA_TYPE_NIGORI: i32 = 47745;
 const DATA_TYPE_BOOKMARK: i32 = 32904;
 
