@@ -48,6 +48,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  lpk:
+    needs: create-release
+    runs-on: [self-hosted, xiaomoru]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build lpk
+        working-directory: lazycat
+        run: lzc-cli project build
+
+      - name: Upload lpk to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lazycat/*.lpk
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   binaries:
     needs: create-release
     name: ${{ matrix.target }}
