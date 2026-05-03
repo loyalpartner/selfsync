@@ -113,14 +113,19 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            build-tool: cargo-zigbuild
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            build-tool: cargo-zigbuild
           - target: x86_64-pc-windows-gnu
             os: ubuntu-latest
+            build-tool: cargo-zigbuild
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
+            build-tool: cargo
           - target: aarch64-apple-darwin
             os: macos-latest
+            build-tool: cargo
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -139,7 +144,7 @@ jobs:
         with:
           bin: selfsync-server
           target: ${{ matrix.target }}
-          build-tool: cargo-zigbuild
+          build-tool: ${{ matrix.build-tool }}
           archive: $bin-$tag-$target
           tar: unix
           zip: windows
