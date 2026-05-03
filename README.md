@@ -1,76 +1,57 @@
-# selfsync
+<p align="center">
+  <img src="lazycat/icon.png" alt="selfsync" width="120" />
+</p>
 
-[中文文档](README.zh-CN.md)
+<h1 align="center">selfsync</h1>
 
-Self-hosted Chrome / Edge sync server. Keep your bookmarks, passwords, preferences, and other browser data in sync across devices — without sending anything to Google or Microsoft.
+<p align="center"><em>Your own Chrome &amp; Edge sync server. Bookmarks, passwords, settings — synced between your devices, stored only on your machine.</em></p>
 
-> [!CAUTION]
-> **Do NOT expose this server to the public internet.** selfsync performs no authentication — anyone who can reach the port can read and overwrite synced data, including saved passwords. Run it on trusted private networks (LAN, NAS, home lab) or behind a zero-trust tunnel (Tailscale, Cloudflare Zero Trust, WireGuard).
+<p align="center">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/loyalpartner/selfsync"></a>
+  <a href="https://github.com/loyalpartner/selfsync/releases"><img alt="Release" src="https://img.shields.io/github/v/release/loyalpartner/selfsync"></a>
+  <a href="https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync"><img alt="Lazycat AppStore" src="https://img.shields.io/badge/Lazycat-AppStore-orange"></a>
+</p>
 
-## How It Works
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">中文</a></p>
 
-Chromium-family browsers natively support syncing to a custom server via the `--sync-url` flag. selfsync implements the Chrome Sync protocol and stores everything locally in a single SQLite file.
+## What you get
 
-Per-user records use the composite key `(email, browser_kind)`: Edge with `alice@example.com` and Chrome with `alice@example.com` are **separate** user rows in the database, because the two browsers use incompatible cryptographers and ship different permanent bookmark folders. Trying to share one row would corrupt sync state on every commit.
+- Bookmarks, passwords, autofill, history, tabs, extensions and settings synced between your Chrome / Edge installs.
+- Data stays on your hardware. No Google account, no Microsoft account.
+- Single binary, single SQLite file. Back it up by copying one file.
+- Runs on Linux, macOS, Windows, Docker, or one click on Lazycat.
 
-## Browser Support
+## Install
 
-Only Chrome and Edge are tested. Other Chromium-derived browsers (Brave, Vivaldi, Arc, Opera, …) are likely to work because the server treats anything without an `X-AFS-ClientInfo: app=Microsoft Edge` header as standard Chromium — but we have not verified them.
-
-| Browser | Sync works | Multi-user | Notes |
-|---|---|---|---|
-| Chrome | ✅ | ✅ per email | Standard path |
-| **Microsoft Edge** | ✅ | ❌ **single user only** | See below |
-
-### Edge Limitation
-
-Edge **does not send the signed-in account email** in its sync requests. Where vanilla Chromium puts your Google account email in the protobuf `share` field, Edge puts a base64-encoded device GUID. selfsync has no way to recover the real account from that, so **all Edge devices fall into one shared user record** (`anonymous@localhost`, `browser_kind=edge`).
-
-What this means in practice:
-
-- ✅ **Multiple Edge devices for the same person** sync correctly with each other — the shared record is exactly what you want.
-- ⚠️ **Multiple Edge users on the same selfsync instance** end up sharing one merged dataset (their bookmarks, passwords, etc. all converge into the same record). If you need user separation, run one selfsync instance per user (different port / DB file / container).
-- ✅ **Edge and Chrome on the same person's account** are kept isolated — they are independent user rows by design (incompatible Nigori encryption).
-
-## Quick Start
-
-### Option 1: Docker Compose (recommended)
+### Docker / Docker Compose
 
 ```bash
 docker compose up -d
 ```
 
-Data is persisted to a Docker volume.
+Data persists in a named Docker volume. The image is published at `ghcr.io/loyalpartner/selfsync`.
 
-### Option 2: Docker
+### Pre-built binary
 
-```bash
-docker build -t selfsync .
-docker run -d -p 8080:8080 -v ./data:/data selfsync
-```
+Grab a release for your platform from [GitHub Releases](https://github.com/loyalpartner/selfsync/releases) — Linux (x86_64 / aarch64), Windows, macOS (Intel / Apple Silicon). Unpack and run `selfsync-server`.
 
-### Option 3: Build from source
+### Lazycat one-click
 
-```bash
-cargo build --release
-./target/release/selfsync-server
-```
+If you run a Lazycat box, install from the [Lazycat AppStore](https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync).
 
-### Point your browser at the server
+> [!NOTE]
+> selfsync has no login screen — anything that can reach the port can read your synced data. Run it on your home LAN, NAS, or homelab. To access it from outside your network, put it behind Tailscale, WireGuard, or Cloudflare Zero Trust.
 
-**Chrome / Chromium:**
+## Connect your browser
+
+Launch your browser pointed at the server, sign in with any account, and turn sync on. No export/import needed — your local data uploads automatically.
 
 ```bash
 google-chrome-stable --sync-url=http://127.0.0.1:8080
+microsoft-edge       --sync-url=http://127.0.0.1:8080
 ```
 
-**Microsoft Edge:**
-
-```bash
-microsoft-edge --sync-url=http://127.0.0.1:8080
-```
-
-Then sign in (any account) and turn sync on. Chrome will upload its local bookmarks / passwords / settings to selfsync. No export/import needed.
+> **Edge note**: if multiple people share one selfsync instance with Edge, their data merges into one profile (Edge doesn't tell the server which account is signed in). For separate Edge users, run a separate instance per person. Chrome users on the same instance are kept separate automatically.
 
 ## Configuration
 
@@ -84,49 +65,10 @@ Then sign in (any account) and turn sync on. Chrome will upload its local bookma
 
 In the Docker image the defaults are overridden to `0.0.0.0:8080` and `/data/selfsync.db`.
 
-## Endpoints
+## For developers
 
-<!-- AUTO-GENERATED:routes -->
-| Path | Method | Purpose |
-|---|---|---|
-| `/` | GET | HTML user dashboard |
-| `/healthz` | GET | Liveness check (returns `ok`) |
-| `/command/`, `/command` | POST | Chrome sync protocol entry point |
-| `/chrome-sync/command/`, `/chrome-sync/command` | POST | Alternate path (works with `--sync-url=http://host:port/chrome-sync`) |
-| `/v1/feeds/me/syncEntities[/command][/]` | POST | Edge sync path variants |
-| `/sync/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | Edge MSA private endpoint stub (returns the same 6-byte success envelope as real MSA — required for `BookmarkDataTypeController` initialization) |
-| `/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | Same, alternate prefix |
-<!-- /AUTO-GENERATED -->
-
-## Things to Watch Out For
-
-- **Do NOT include `/command/` in `--sync-url`**. The browser appends it. Use `http://127.0.0.1:8080`.
-- **After resetting the server database**, use a fresh browser profile (`--user-data-dir=/tmp/test`) to avoid stale local sync state.
-- **Upgrading from v0.1.1**: just replace the binary. Schema migrations run automatically — no need to delete `selfsync.db`.
-
-## Building
-
-Requires Rust 1.85+.
-
-<!-- AUTO-GENERATED:cargo -->
-| Command | Purpose |
-|---|---|
-| `cargo build --release` | Build the workspace |
-| `cargo build --release -p selfsync-server` | Build the server only |
-| `cargo test` | Run unit tests |
-| `cargo clippy --all-targets -- -D warnings` | Strict lint check |
-<!-- /AUTO-GENERATED -->
-
-## Architecture
-
-For protocol details, browser-specific quirks (Edge MSA Nigori, `workspace_bookmarks`), database schema, and migration internals, see [docs/architecture.md](docs/architecture.md).
-
-## Prior Art
-
-- Chromium `loopback_server.cc` — Reference sync server implementation
+Rust 1.85+, `cargo build --release`. Protocol details, HTTP routes, schema, and contributor notes live in [docs/architecture.md](docs/architecture.md). Common gotchas in [docs/faq.md](docs/faq.md).
 
 ## License
 
-Copyright (C) 2026 Lee &lt;loyalpartner@163.com&gt;
-
-Licensed under [GPL-3.0-or-later](LICENSE).
+Copyright (C) 2026 Lee &lt;loyalpartner@163.com&gt;. Licensed under [GPL-3.0-or-later](LICENSE).

@@ -128,3 +128,36 @@ Rust 实现的 [Nigori 协议](https://www.cl.cam.ac.uk/~drt24/nigori/nigori-ove
 - `components/sync/engine/loopback_server/loopback_server.cc` — 参考同步服务器实现
 - `components/sync_bookmarks/bookmark_data_type_processor.cc::OnInitialUpdateReceived()` — Type 64 / `kBookmarksInitialMergePermanentEntitiesMissing` 的判定点
 - `components/sync/nigori/nigori_sync_bridge_impl.cc::MergeFullSyncData()` — Edge 用空 IMPLICIT Nigori 触发的 client-init fall-through 路径
+
+## HTTP 路由
+
+<!-- AUTO-GENERATED:routes -->
+| 路径 | 方法 | 用途 |
+|---|---|---|
+| `/` | GET | HTML 用户面板 |
+| `/healthz` | GET | 存活检查（返回 `ok`） |
+| `/command/`、`/command` | POST | Chrome 同步协议入口 |
+| `/chrome-sync/command/`、`/chrome-sync/command` | POST | 备选路径（配合 `--sync-url=http://host:port/chrome-sync`） |
+| `/v1/feeds/me/syncEntities[/command][/]` | POST | Edge 的同步路径变体 |
+| `/sync/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | Edge MSA 私有端点 stub（返回与真实 MSA 完全一致的 6 字节成功响应——`BookmarkDataTypeController` 初始化必需） |
+| `/v1/diagnosticData/Diagnostic.SendCheckResult()[/]` | POST | 同上，备用前缀 |
+<!-- /AUTO-GENERATED -->
+
+尾部斜杠由 `NormalizePathLayer` 统一处理，浏览器追加的 `/command/` 也能正确路由到对应 handler。
+
+## 编译
+
+需要 Rust 1.85+：
+
+<!-- AUTO-GENERATED:cargo -->
+| 命令 | 用途 |
+|---|---|
+| `cargo build --release` | 编译整个工作空间 |
+| `cargo build --release -p selfsync-server` | 只编译服务器 |
+| `cargo test` | 跑单元测试 |
+| `cargo clippy --all-targets -- -D warnings` | 严格 lint 检查 |
+<!-- /AUTO-GENERATED -->
+
+## 参考
+
+- Chromium `loopback_server.cc` — Chrome 内置的参考同步服务器实现
