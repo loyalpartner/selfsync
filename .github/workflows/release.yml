@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          lzc-cli appstore publish "${{ steps.build-lpk.outputs.lpk }}" -c "Release v${VERSION}"
+          lzc-cli appstore publish "${{ steps.build-lpk.outputs.lpk }}" --clang zh -c "Release v${VERSION}"
 
       - name: Upload lpk to GitHub release
         uses: softprops/action-gh-release@v2
