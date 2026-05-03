@@ -135,7 +135,7 @@ jobs:
             os: ubuntu-latest
             build-tool: cargo-zigbuild
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             build-tool: cargo
           - target: aarch64-apple-darwin
             os: macos-latest
