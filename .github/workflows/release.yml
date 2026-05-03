@@ -88,20 +88,34 @@ jobs:
           echo "Lazycat image: ${IMG}"
           echo "image=${IMG}" >> "${GITHUB_OUTPUT}"
 
-      - name: Pin image in lzc-manifest.yml
+      - name: Pin version and image
         run: |
           set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i -E "s|^version:[[:space:]]*.*|version: ${VERSION}|" lazycat/package.yml
           sed -i -E "s|image:[[:space:]]*registry\.lazycat\.cloud[^[:space:]]*|image: ${{ steps.copy-image.outputs.image }}|" lazycat/lzc-manifest.yml
-          grep '^[[:space:]]*image:' lazycat/lzc-manifest.yml
+          grep -E '^version:|^[[:space:]]*image:' lazycat/package.yml lazycat/lzc-manifest.yml
 
       - name: Build lpk
+        id: build-lpk
         working-directory: lazycat
-        run: lzc-cli project build
+        run: |
+          set -euo pipefail
+          lzc-cli project build
+          LPK=$(ls *.lpk | head -1)
+          echo "Built ${LPK}"
+          echo "lpk=lazycat/${LPK}" >> "${GITHUB_OUTPUT}"
 
-      - name: Upload lpk to release
+      - name: Publish lpk to Lazycat appstore
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          lzc-cli appstore publish "${{ steps.build-lpk.outputs.lpk }}" -c "Release v${VERSION}"
+
+      - name: Upload lpk to GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: lazycat/*.lpk
+          files: ${{ steps.build-lpk.outputs.lpk }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
   binaries:
