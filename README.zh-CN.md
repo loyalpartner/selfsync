@@ -53,6 +53,18 @@ microsoft-edge       --sync-url=http://127.0.0.1:8080
 
 > **Edge 提示**：多人共用一个 selfsync 实例时数据会合并到一个账户（Edge 不会告诉服务器登录的是谁）。要让 Edge 多用户隔离就一人一个实例。Chrome 多用户在同一实例自动隔离。
 
+### Android Chrome
+
+设备用 ADB 连上后：
+
+```bash
+adb shell am set-debug-app --persistent com.android.chrome
+adb shell 'echo "chrome --sync-url=http://<host>:8080" > /data/local/tmp/chrome-command-line'
+adb shell am force-stop com.android.chrome
+```
+
+把 `<host>` 换成你的 selfsync 地址（局域网 IP、NAS 主机名、或者 Tailscale 名字）。Chrome 重启后打开 `chrome://sync-internals`，确认 `Sync Service URL` 已经变成你的地址即可。不用重新打包 APK。
+
 ## 配置
 
 <!-- AUTO-GENERATED:cli-env -->

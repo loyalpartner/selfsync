@@ -53,6 +53,18 @@ microsoft-edge       --sync-url=http://127.0.0.1:8080
 
 > **Edge note**: if multiple people share one selfsync instance with Edge, their data merges into one profile (Edge doesn't tell the server which account is signed in). For separate Edge users, run a separate instance per person. Chrome users on the same instance are kept separate automatically.
 
+### Android Chrome
+
+With the device plugged in via ADB:
+
+```bash
+adb shell am set-debug-app --persistent com.android.chrome
+adb shell 'echo "chrome --sync-url=http://<host>:8080" > /data/local/tmp/chrome-command-line'
+adb shell am force-stop com.android.chrome
+```
+
+Replace `<host>` with your selfsync host (LAN IP, NAS hostname, or Tailscale name). After Chrome relaunches, open `chrome://sync-internals` and confirm `Sync Service URL` shows your address. No APK rebuild needed.
+
 ## Configuration
 
 <!-- AUTO-GENERATED:cli-env -->
