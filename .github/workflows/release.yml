@@ -49,12 +49,50 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   lpk:
-    needs: create-release
+    needs: [create-release, docker]
     runs-on: [self-hosted, xiaomoru]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lazycat appstore login
+        env:
+          LAZYCAT_USERNAME: ${{ secrets.LAZYCAT_USERNAME }}
+          LAZYCAT_PASSWORD: ${{ secrets.LAZYCAT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -fsS -X POST https://account.lazycat.cloud/api/login/signin \
+            --data-urlencode "username=${LAZYCAT_USERNAME}" \
+            --data-urlencode "password=${LAZYCAT_PASSWORD}" \
+            | jq -r '.data.token')
+          if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
+            echo "::error::Lazycat appstore login failed"
+            exit 1
+          fi
+          echo "::add-mask::${TOKEN}"
+          echo "LZC_CLI_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Copy image to Lazycat registry
+        id: copy-image
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          SRC="ghcr.io/${GITHUB_REPOSITORY,,}:${VERSION}"
+          echo "Copying ${SRC}"
+          IMG=$(lzc-cli appstore copy-image "${SRC}" --trace-level quiet)
+          if [ -z "${IMG}" ]; then
+            echo "::error::copy-image returned empty output"
+            exit 1
+          fi
+          echo "Lazycat image: ${IMG}"
+          echo "image=${IMG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pin image in lzc-manifest.yml
+        run: |
+          set -euo pipefail
+          sed -i -E "s|image:[[:space:]]*registry\.lazycat\.cloud[^[:space:]]*|image: ${{ steps.copy-image.outputs.image }}|" lazycat/lzc-manifest.yml
+          grep '^[[:space:]]*image:' lazycat/lzc-manifest.yml
 
       - name: Build lpk
         working-directory: lazycat
