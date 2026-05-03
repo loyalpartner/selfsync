@@ -9,7 +9,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/loyalpartner/selfsync"></a>
   <a href="https://github.com/loyalpartner/selfsync/releases"><img alt="Release" src="https://img.shields.io/github/v/release/loyalpartner/selfsync"></a>
-  <a href="https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync"><img alt="Lazycat AppStore" src="https://img.shields.io/badge/Lazycat-AppStore-orange"></a>
+  <a href="#lazycat-one-click"><img alt="Lazycat AppStore" src="https://img.shields.io/badge/Lazycat-cloud.lazycat.app.chromesync-orange"></a>
 </p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">中文</a></p>
@@ -37,7 +37,7 @@ Grab a release for your platform from [GitHub Releases](https://github.com/loyal
 
 ### Lazycat one-click
 
-If you run a Lazycat box, install from the [Lazycat AppStore](https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync).
+If you run a Lazycat box, search "SelfSync" in your AppStore, or open it directly at `https://appstore.<your-box>.heiyu.space/#/shop/detail/cloud.lazycat.app.chromesync` (replace `<your-box>` with your device name).
 
 > [!NOTE]
 > selfsync has no login screen — anything that can reach the port can read your synced data. Run it on your home LAN, NAS, or homelab. To access it from outside your network, put it behind Tailscale, WireGuard, or Cloudflare Zero Trust.

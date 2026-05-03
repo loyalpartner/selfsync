@@ -9,7 +9,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/loyalpartner/selfsync"></a>
   <a href="https://github.com/loyalpartner/selfsync/releases"><img alt="Release" src="https://img.shields.io/github/v/release/loyalpartner/selfsync"></a>
-  <a href="https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync"><img alt="Lazycat AppStore" src="https://img.shields.io/badge/Lazycat-AppStore-orange"></a>
+  <a href="#懒猫一键安装"><img alt="Lazycat AppStore" src="https://img.shields.io/badge/Lazycat-cloud.lazycat.app.chromesync-orange"></a>
 </p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">中文</a></p>
@@ -37,7 +37,7 @@ docker compose up -d
 
 ### 懒猫一键安装
 
-家里有懒猫微服盒子的话，直接到[懒猫应用商店](https://appstore.lazycat.cloud/#/appstore/cloud.lazycat.app.chromesync)一键安装。
+家里有懒猫微服盒子的话，在自家 AppStore 搜「SelfSync」，或者直接打开 `https://appstore.<盒子名>.heiyu.space/#/shop/detail/cloud.lazycat.app.chromesync`（把 `<盒子名>` 换成你的设备名）。
 
 > [!NOTE]
 > selfsync 没有登录界面，能连到端口的东西都能读你的同步数据。请在家庭局域网、NAS 或家用环境里跑。想在外面访问就放在 Tailscale、WireGuard 或 Cloudflare Zero Trust 后面。
