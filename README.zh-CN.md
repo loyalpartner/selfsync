@@ -53,6 +53,21 @@ microsoft-edge       --sync-url=http://127.0.0.1:8080
 
 > **Edge 提示**：多人共用一个 selfsync 实例时数据会合并到一个账户（Edge 不会告诉服务器登录的是谁）。要让 Edge 多用户隔离就一人一个实例。Chrome 多用户在同一实例自动隔离。
 
+### Linux 持久化参数
+
+大多数 Linux 发行版包里的 Chromium / Chrome（Arch 的 `chromium`、AUR `google-chrome`、Manjaro 等）启动脚本会读取一个 flags 配置文件，省得每次启动都手动加 `--sync-url`。在对应文件里写一行即可：
+
+- Chromium：`~/.config/chromium-flags.conf`
+- Google Chrome：`~/.config/chrome-flags.conf`
+- Microsoft Edge：`~/.config/microsoft-edge-flags.conf`
+- Flatpak：上面同名文件，但路径在 `~/.var/app/<app-id>/config/` 下
+
+```text
+--sync-url=http://127.0.0.1:8080
+```
+
+重启浏览器生效。某些发行版的官方包（如 Debian 的 `google-chrome` deb）没有启动包装脚本，不会读这个文件——改用 `.desktop` 文件覆盖或自己写 wrapper 脚本。
+
 ### Android Chrome
 
 设备用 ADB 连上后：

@@ -53,6 +53,21 @@ microsoft-edge       --sync-url=http://127.0.0.1:8080
 
 > **Edge note**: if multiple people share one selfsync instance with Edge, their data merges into one profile (Edge doesn't tell the server which account is signed in). For separate Edge users, run a separate instance per person. Chrome users on the same instance are kept separate automatically.
 
+### Linux: persistent flags
+
+Most Linux Chromium / Chrome packages (Arch `chromium`, AUR `google-chrome`, Manjaro, etc.) ship a launcher wrapper that reads extra flags from a config file, so you don't have to type `--sync-url` every time. Write one line to whichever applies:
+
+- Chromium: `~/.config/chromium-flags.conf`
+- Google Chrome: `~/.config/chrome-flags.conf`
+- Microsoft Edge: `~/.config/microsoft-edge-flags.conf`
+- Flatpak: same filenames under `~/.var/app/<app-id>/config/`
+
+```text
+--sync-url=http://127.0.0.1:8080
+```
+
+Restart the browser. Distros that ship no launcher wrapper (e.g. Debian's official `google-chrome` deb) ignore this file — use a `.desktop` override or your own wrapper script instead.
+
 ### Android Chrome
 
 With the device plugged in via ADB:
