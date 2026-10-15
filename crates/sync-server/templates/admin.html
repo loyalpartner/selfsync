@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="{{ t.html_lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ t.page_title }}</title>
+<style>
+:root{--ground:#F4F4F1;--card:#FFFFFF;--line:#E3E3DD;--line-soft:#EEEEE9;--ink:#1A1B1E;--muted:#5B5D63;--accent:#1F56A8;--off:#B9B9B2;--warn-bg:#FCEFD6;--warn-fg:#7A4A00;--ok-bg:#E2F1E7;--ok-fg:#1E5B3A;--bad-bg:#F8E3E3;--bad-fg:#8F2525;--danger:#A12A2A;--danger-line:#E3BDBD;--note-bg:#F1F4FA;--note-fg:#1F3F73;--btn-line:#C9C9C2;--th:#FAFAF8}
+@media (prefers-color-scheme:dark){:root{--ground:#141517;--card:#1C1D20;--line:#2E3035;--line-soft:#26282C;--ink:#ECECEA;--muted:#A3A5AB;--accent:#6E9EE8;--off:#4A4C52;--warn-bg:#3A2C12;--warn-fg:#F2C77A;--ok-bg:#16301F;--ok-fg:#8FD4A8;--bad-bg:#3A1A1A;--bad-fg:#F0A3A3;--danger:#F0A3A3;--danger-line:#5A2E2E;--note-bg:#1A2436;--note-fg:#A9C3EE;--btn-line:#44464C;--th:#202125}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+header{background:var(--card);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;padding-top:14px;padding-bottom:14px}
+.brand{display:flex;align-items:baseline;gap:12px}
+.brand b{font-size:18px;font-weight:500}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;font-size:13px;color:var(--muted)}
+.meta .addr{color:var(--ink)}
+.langs{display:flex;border:1px solid var(--btn-line);border-radius:8px;overflow:hidden}
+.langs a{display:flex;align-items:center;height:36px;padding:0 12px;color:var(--ink);text-decoration:none;font-size:13px}
+.langs a+a{border-left:1px solid var(--btn-line)}
+.langs a[aria-current]{background:var(--ink);color:var(--card)}
+main{display:flex;flex-direction:column;gap:24px;padding-top:28px;padding-bottom:72px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.switch-card{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;padding:24px}
+.switch-card div{flex:1 1 420px;min-width:0}
+h1{margin:0 0 6px;font-size:20px;font-weight:600}
+h2{margin:0;font-size:16px;font-weight:600}
+p{margin:0}
+.desc{color:var(--muted);max-width:640px}
+.state{margin-top:10px;font-size:14px;font-weight:500;color:var(--muted)}
+.state.on{color:var(--accent)}
+.switch{flex:0 0 auto;width:64px;height:36px;border-radius:18px;border:0;padding:4px;cursor:pointer;background:var(--off);display:flex;align-items:center}
+.switch[aria-checked=true]{background:var(--accent)}
+.switch span{display:block;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch[aria-checked=true] span{transform:translateX(28px)}
+.flash{margin:-8px 0 0;font-size:14px;color:var(--ok-fg)}
+.head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line)}
+.head>div{display:flex;align-items:center;gap:10px}
+.hint{font-size:13px;color:var(--muted)}
+.count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 8px;border-radius:12px;font-size:13px;font-weight:600}
+.count.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.count.ok{background:var(--ok-bg);color:var(--ok-fg)}
+.count.bad{background:var(--bad-bg);color:var(--bad-fg)}
+.note{padding:12px 20px;background:var(--note-bg);color:var(--note-fg);font-size:14px;border-bottom:1px solid var(--line)}
+.empty{padding:28px 20px;color:var(--muted);text-align:center}
+.pending{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line-soft)}
+.pending:last-child{border-bottom:0}
+.pending .info{flex:1 1 420px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.pending .who{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.pending .who b{font-size:16px;font-weight:600}
+.pending .who span{color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 20px;font-size:13px;color:var(--muted)}
+.facts span span{color:var(--ink)}
+.actions{display:flex;gap:10px;flex:0 0 auto}
+form{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{height:44px;padding:0 20px;border-radius:8px;font-size:14px;font-weight:500;border:1px solid var(--btn-line);background:var(--card);color:var(--ink)}
+.btn.primary{border:0;background:var(--accent);color:#fff;font-weight:600}
+.btn.small{height:36px;padding:0 14px;font-size:13px}
+.btn.danger{border-color:var(--danger-line);color:var(--danger)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:760px}
+th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line);background:var(--th);white-space:nowrap}
+td{padding:12px 20px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.dim{color:var(--muted);white-space:nowrap}
+td.act{text-align:right}
+td:first-child{min-width:220px}
+.sub{font-size:13px;color:var(--muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.footer{font-size:13px;color:var(--muted);max-width:760px}
+</style>
+</head>
+<body>
+<header>
+<div class="wrap">
+<div class="brand"><b class="mono">selfsync</b><span class="hint">{{ t.admin }}</span></div>
+<div class="meta">
+<span>{{ t.admin_port }} <span class="mono addr">{{ admin_addr }}</span> · {% if loopback %}{{ t.local_only }}{% else %}{{ t.exposed }}{% endif %}</span>
+<nav class="langs" aria-label="{{ t.language }} / Language">
+<a href="/?lang=zh" lang="zh-CN"{% if lang == "zh" %} aria-current="true"{% endif %}>中文</a>
+<a href="/?lang=en" lang="en"{% if lang == "en" %} aria-current="true"{% endif %}>English</a>
+</nav>
+</div>
+</div>
+</header>
+
+<main class="wrap">
+
+<section class="card switch-card" aria-labelledby="sw-title">
+<div>
+<h1 id="sw-title">{{ t.approval_title }}</h1>
+<p class="desc">{{ t.approval_desc }}</p>
+<p class="state{% if approval_on %} on{% endif %}">{% if approval_on %}{{ t.status_on }}{% else %}{{ t.status_off }}{% endif %}</p>
+</div>
+<form method="post" action="/settings/device-approval">
+<input type="hidden" name="enabled" value="{% if approval_on %}0{% else %}1{% endif %}">
+<button type="submit" class="switch" role="switch" aria-checked="{{ approval_on }}" aria-label="{{ t.approval_title }}"><span aria-hidden="true"></span></button>
+</form>
+</section>
+
+{% if let Some(msg) = flash %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
+
+<section class="card" aria-labelledby="pending-title">
+<div class="head">
+<div><h2 id="pending-title">{{ t.pending_title }}</h2><span class="count warn">{{ pending.len() }}</span></div>
+<span class="hint">{{ t.pending_hint }}</span>
+</div>
+{% if !approval_on && !pending.is_empty() %}<div class="note">{{ t.off_note }}</div>{% endif %}
+{% for d in pending %}
+<div class="pending">
+<div class="info">
+<div class="who"><b>{{ d.title }}</b><span>{{ d.email }}</span></div>
+<div class="facts">
+<span>{{ t.ip }} <span class="mono">{{ d.ip }}</span></span>
+<span>{{ t.first_seen }} <span>{{ d.first_seen }}</span></span>
+<span>{{ t.last_attempt }} <span>{{ d.last_seen }}</span></span>
+<span>{{ t.device_id }} <span class="mono">{{ d.guid }}</span></span>
+</div>
+</div>
+<div class="actions">
+<form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn">{{ t.reject }}</button></form>
+<form method="post" action="/devices/{{ d.id }}/approve"><button type="submit" class="btn primary">{{ t.approve }}</button></form>
+</div>
+</div>
+{% else %}
+<div class="empty">{{ t.no_pending }}</div>
+{% endfor %}
+</section>
+
+<section class="card" aria-labelledby="approved-title">
+<div class="head"><div><h2 id="approved-title">{{ t.approved_title }}</h2><span class="count ok">{{ approved.len() }}</span></div></div>
+{% if approved.is_empty() %}
+<div class="empty">{{ t.no_approved }}</div>
+{% else %}
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">{{ t.col_device }}</th><th scope="col">{{ t.col_account }}</th><th scope="col">{{ t.ip }}</th><th scope="col">{{ t.first_seen }}</th><th scope="col">{{ t.col_last_sync }}</th><th scope="col"><span class="sr">{{ t.col_actions }}</span></th></tr></thead>
+<tbody>
+{% for d in approved %}
+<tr>
+<td><div>{{ d.title }}</div><div class="sub">{{ d.sub }}</div></td>
+<td class="dim">{{ d.email }}</td>
+<td class="mono">{{ d.ip }}</td>
+<td class="dim">{{ d.first_seen }}</td>
+<td class="dim">{{ d.last_seen }}</td>
+<td class="act"><form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn small danger" aria-label="{{ t.revoke }} {{ d.title }}">{{ t.revoke }}</button></form></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+</section>
+
+{% if !rejected.is_empty() %}
+<section class="card" aria-labelledby="rejected-title">
+<div class="head">
+<div><h2 id="rejected-title">{{ t.rejected_title }}</h2><span class="count bad">{{ rejected.len() }}</span></div>
+<span class="hint">{{ t.rejected_hint }}</span>
+</div>
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">{{ t.col_device }}</th><th scope="col">{{ t.col_account }}</th><th scope="col">{{ t.ip }}</th><th scope="col">{{ t.first_seen }}</th><th scope="col">{{ t.last_attempt }}</th><th scope="col"><span class="sr">{{ t.col_actions }}</span></th></tr></thead>
+<tbody>
+{% for d in rejected %}
+<tr>
+<td><div>{{ d.title }}</div><div class="sub">{{ d.sub }}</div></td>
+<td class="dim">{{ d.email }}</td>
+<td class="mono">{{ d.ip }}</td>
+<td class="dim">{{ d.first_seen }}</td>
+<td class="dim">{{ d.last_seen }}</td>
+<td class="act"><form method="post" action="/devices/{{ d.id }}/approve"><button type="submit" class="btn small" aria-label="{{ t.re_approve }} {{ d.title }}">{{ t.re_approve }}</button></form></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="users-title">
+<div class="head"><div><h2 id="users-title">{{ t.users_title }}</h2></div></div>
+{% if users.is_empty() %}
+<div class="empty">{{ t.no_users }}</div>
+{% else %}
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">{{ t.col_account }}</th><th scope="col">{{ t.col_browser }}</th><th scope="col">{{ t.col_approved_devices }}</th><th scope="col">{{ t.col_data_version }}</th></tr></thead>
+<tbody>
+{% for u in users %}
+<tr><td>{{ u.email }}</td><td class="dim">{{ u.browser }}</td><td>{{ u.devices }}</td><td class="mono">{{ u.version }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+</section>
+
+<p class="footer">{{ t.footer }}</p>
+</main>
+</body>
+</html>

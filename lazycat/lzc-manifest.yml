@@ -1,20 +1,36 @@
 application:
   subdomain: chrome-sync
+  # The app's front door is the admin page, behind Lazycat login. Only the
+  # sync endpoints are public, because browsers' sync clients can't log in.
+  # Each backend repeats its location so the trimmed prefix is put back.
   upstreams:
+    - location: /command
+      backend: http://selfsync:8080/command
+    - location: /chrome-sync/
+      backend: http://selfsync:8080/chrome-sync/
+    - location: /v1/feeds/
+      backend: http://selfsync:8080/v1/feeds/
     - location: /
-      backend: http://selfsync:8080
+      backend: http://selfsync:8081/
   public_path:
-    - /
+    - /command
+    - /chrome-sync/
+    - /v1/feeds/
   health_check:
     test_url: http://selfsync:8080/healthz
     timeout: 10s
     start_period: 5s
 services:
   selfsync:
+#@build if profile=dev
+    image: embed:selfsync
+#@build else
     image: registry.lazycat.cloud/lee/loyalpartner/selfsync:2f640ee48174e19e
+#@build end
     environment:
       - SELFSYNC_DB=/lzcapp/var/data/selfsync.db
       - SELFSYNC_ADDR=0.0.0.0:8080
+      - SELFSYNC_ADMIN_ADDR=0.0.0.0:8081
       - RUST_LOG=selfsync_server=info
     binds:
       - /lzcapp/var/data:/data

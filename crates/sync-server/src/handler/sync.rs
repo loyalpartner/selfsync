@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+use std::net::SocketAddr;
+
 use axum::{
     Extension,
     body::Bytes,
+    extract::{ConnectInfo, Query, rejection::QueryRejection},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
@@ -9,14 +13,21 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 
 use crate::auth::ClientIdentity;
 use crate::db::entity::user;
+use crate::device::{self, Admission, DeviceRequest};
 use crate::proto::sync_pb;
 use crate::util::gen_encryption_key;
 
 use super::{commit, get_updates};
 
+/// Store birthday sent to every client. See `find_or_create_user` for why it
+/// is a fixed sentinel rather than a per-user value.
+const STORE_BIRTHDAY: &str = "ProductionEnvironmentDefinition";
+
 /// POST /command/ — handles all Chrome sync protocol messages.
 pub async fn handle_command(
     Extension(db): Extension<DatabaseConnection>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    query: Result<Query<HashMap<String, String>>, QueryRejection>,
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
@@ -29,6 +40,14 @@ pub async fn handle_command(
     };
 
     let identity = ClientIdentity::from_request(&headers, &msg);
+    // Chromium appends `client_id=<cache_guid>` to every request URL; it is
+    // the only per-device id present on the very first GET_UPDATES.
+    let client_id = query
+        .as_ref()
+        .ok()
+        .and_then(|Query(q)| q.get("client_id").map(String::as_str));
+    let peer = peer.map(|Extension(ConnectInfo(addr))| addr);
+    let device_req = DeviceRequest::new(client_id, &headers, peer);
     let msg_type = message_type_name(msg.message_contents);
     tracing::info!(
         email = %identity.email,
@@ -36,10 +55,34 @@ pub async fn handle_command(
         msg_type,
         body_len = body.len(),
         share = %msg.share,
-        cache_guid = request_cache_guid(&msg),
+        cache_guid = device_req.cache_guid.as_deref().unwrap_or("<none>"),
         client_birthday = msg.store_birthday.as_deref().unwrap_or("<none>"),
         "sync request"
     );
+
+    match device::admit(&db, &identity, &device_req).await {
+        Ok(Admission::Allow) => {}
+        Ok(Admission::Deny) => {
+            tracing::info!(
+                email = %identity.email,
+                cache_guid = device_req.cache_guid.as_deref().unwrap_or("<none>"),
+                msg_type,
+                "device not approved, request refused"
+            );
+            // TRANSIENT_ERROR makes the client back off and retry, so an
+            // approved device resumes on its own. DISABLED_BY_ADMIN would
+            // stop sync until the browser restarts.
+            let resp = error_response(
+                STORE_BIRTHDAY,
+                sync_pb::sync_enums::ErrorType::TransientError,
+            );
+            return (StatusCode::OK, resp.encode_to_vec());
+        }
+        Err(e) => {
+            tracing::error!(email = %identity.email, "device lookup failed: {e}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+        }
+    }
 
     let user = match find_or_create_user(&db, &identity).await {
         Ok(u) => u,
@@ -75,15 +118,6 @@ pub async fn handle_command(
         "response sent"
     );
     (StatusCode::OK, resp_bytes)
-}
-
-/// Cache GUID from either the COMMIT envelope (preferred) or the deprecated
-/// `invalidator_client_id` field. Used as a per-device identifier in logs.
-fn request_cache_guid(msg: &sync_pb::ClientToServerMessage) -> &str {
-    let from_commit = msg.commit.as_ref().and_then(|c| c.cache_guid.as_deref());
-    #[allow(deprecated)]
-    let from_invalidator = msg.invalidator_client_id.as_deref();
-    from_commit.or(from_invalidator).unwrap_or("<none>")
 }
 
 async fn dispatch(
@@ -175,7 +209,7 @@ async fn find_or_create_user(
     // the BookmarkDataTypeProcessor in Edge's MSA-aware fork) may validate
     // this exact value as part of their initial-merge sanity checks.
     // Chromium accepts any non-empty birthday so this is safe across both.
-    let birthday = "ProductionEnvironmentDefinition".to_string();
+    let birthday = STORE_BIRTHDAY.to_string();
     let enc_key = gen_encryption_key();
     let mut next_version = 1i64;
 

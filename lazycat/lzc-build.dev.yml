@@ -1,0 +1,9 @@
+# Dev overrides for `lzc-cli project deploy`: build the image from this
+# checkout on the box and install under a separate package id, so the
+# release install and its data are left alone.
+package_override:
+  package: cloud.lazycat.app.chromesync.dev
+images:
+  selfsync:
+    dockerfile: ../Dockerfile
+    context: ..

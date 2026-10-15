@@ -2,10 +2,8 @@ mod commit;
 mod get_updates;
 mod init;
 pub(crate) mod sync;
-mod users;
 
 pub use sync::handle_command;
-pub use users::list_users;
 
 use axum::{extract::Request, middleware::Next, response::Response};
 
