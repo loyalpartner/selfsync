@@ -37,6 +37,8 @@ selfsync/
 │           ├── main.rs      # axum server entry point + routes + CLI
 │           ├── proto.rs     # Generated protobuf types
 │           ├── auth.rs      # BrowserKind + ClientIdentity::from_request
+│           ├── device.rs    # Per-device admission (client_id query param, approval switch)
+│           ├── admin/       # Admin page on SELFSYNC_ADMIN_ADDR (askama, zh/en, sync UA labels)
 │           ├── progress.rs  # Progress token encoding/decoding
 │           ├── util.rs      # Shared utilities (gen_id, now_millis, BASE64)
 │           ├── db/
@@ -48,8 +50,7 @@ selfsync/
 │               ├── sync.rs      # POST /command dispatch
 │               ├── commit.rs    # COMMIT: create/update entities
 │               ├── get_updates.rs # GET_UPDATES: fetch by version
-│               ├── init.rs      # User initialization (Nigori + bookmarks per browser)
-│               └── users.rs     # GET / user list page
+│               └── init.rs      # User initialization (Nigori + bookmarks per browser)
 ```
 
 ## Sync Server
@@ -58,13 +59,14 @@ selfsync/
 - **Endpoints** (trailing slashes are stripped by `NormalizePathLayer`, so browser-appended `/command/` matches `/command`):
   - `POST /command`, `POST /chrome-sync/command` — Chromium-family entry points
   - `POST /v1/feeds/me/syncEntities/command` — Edge entry point (Edge sets `--sync-url=".../v1/feeds/me/syncEntities"`; engine appends `/command/`)
-  - `GET /` — HTML user dashboard
   - `GET /healthz` — liveness check
+- **Admin page** (separate listener `SELFSYNC_ADMIN_ADDR`, default `127.0.0.1:8081`): `GET /`, `POST /settings/device-approval`, `POST /devices/{id}/approve|reject`. Template in `templates/admin.html`; copy in `admin/i18n.rs` (ZH/EN consts of one struct). Refuses cross-site POSTs; on a loopback bind also refuses non-loopback `Host` (DNS rebinding).
+- **Device approval**: `device::admit` runs before `find_or_create_user`. Device id = `client_id` query param (cache GUID). Refused devices get `TRANSIENT_ERROR` so they resume after approval. See `docs/device-approval.md`.
 - **Auth**: `auth::ClientIdentity::from_request` parses `(email, browser)` per request. Email from protobuf `share` (Chromium puts the signed-in account email; Edge puts a base64 cache_guid → fallback to `anonymous@localhost`). Browser from `X-AFS-ClientInfo: app=Microsoft Edge` (Edge sets this; vanilla Chromium omits it).
 - **Storage**: SQLite (WAL mode), single `sync_entities` table. Per-user monotonic counter `users.next_version`.
 - **Progress tokens**: `v1,{data_type_id},{version}` base64-encoded.
 - **Schema migrations**: `sea-orm-migration` runs at startup (`Migrator::up`). Append new files in `db/migrator/`, never edit released ones. SQLite has no `ALTER TABLE DROP CONSTRAINT` so removing column-level UNIQUE requires a table rebuild via raw SQL.
-- **Config env vars**: `SELFSYNC_DB` (default `selfsync.db`), `SELFSYNC_ADDR` (default `127.0.0.1:8080`).
+- **Config env vars**: `SELFSYNC_DB` (default `selfsync.db`), `SELFSYNC_ADDR` (default `127.0.0.1:8080`), `SELFSYNC_ADMIN_ADDR` (default `127.0.0.1:8081`).
 - **User init** (per-browser branching in `handler/init.rs`):
   - Chromium → KEYSTORE_PASSPHRASE Nigori (server-built, PBKDF2-derived) + 4 bookmark permanent folders
   - Edge → empty IMPLICIT_PASSPHRASE Nigori (triggers client-side init via MSA keys) + 5 folders (extra: `workspace_bookmarks`)

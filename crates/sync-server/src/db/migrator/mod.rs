@@ -7,6 +7,7 @@ use sea_orm_migration::prelude::*;
 
 mod m20260101_000001_initial;
 mod m20260425_000001_users_add_browser_kind;
+mod m20261015_000001_devices;
 
 pub struct Migrator;
 
@@ -16,6 +17,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260101_000001_initial::Migration),
             Box::new(m20260425_000001_users_add_browser_kind::Migration),
+            Box::new(m20261015_000001_devices::Migration),
         ]
     }
 }

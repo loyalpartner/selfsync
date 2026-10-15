@@ -86,11 +86,22 @@ adb shell am force-stop com.android.chrome
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `SELFSYNC_ADDR` | `127.0.0.1:8080` | 监听地址 |
+| `SELFSYNC_ADMIN_ADDR` | `127.0.0.1:8081` | 管理页监听地址 |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite 数据库路径 |
 | `RUST_LOG` | `selfsync_server=info,http=info` | 日志过滤（tracing-subscriber 语法） |
 <!-- /AUTO-GENERATED -->
 
-Docker 镜像里默认值被覆盖为 `0.0.0.0:8080` 和 `/data/selfsync.db`。
+Docker 镜像里默认值被覆盖为 `0.0.0.0:8080`、`0.0.0.0:8081` 和 `/data/selfsync.db`。
+
+## 管理页与设备审核
+
+管理页在单独的端口上，`SELFSYNC_ADMIN_ADDR`（默认 `127.0.0.1:8081`，只有本机能访问），列出账号和设备，支持中文和英文。
+
+打开「新设备需要审核」后，没批准过的浏览器同步会被拒绝，直到你点「批准」；批准后浏览器下次重试就恢复，不用重启。打开开关之前已经在用的设备不受影响。设计见 [docs/device-approval.md](docs/device-approval.md)。
+
+同步端口没有任何认证，管理端口千万别照着同步端口那样开放出去。要远程访问，请放在带认证的反向代理后面。
+
+> 从 0.1.x 升级：同步端口上的 `GET /` 去掉了，页面挪到了管理端口。
 
 ## 开发
 

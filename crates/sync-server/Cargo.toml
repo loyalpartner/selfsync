@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+askama = "0.16"
 axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
-html-escape = "0.2"
 prost = "0.13"
 rand = "0.9"
 sea-orm = { version = "1", features = [
@@ -22,6 +22,7 @@ sea-orm-migration = { version = "1", default-features = false, features = [
 ] }
 async-trait = "0.1"
 selfsync-nigori = { path = "../nigori" }
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = [

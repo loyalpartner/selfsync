@@ -43,8 +43,7 @@ selfsync/
 │   │           ├── sync.rs      # POST /command/ 分发
 │   │           ├── commit.rs    # COMMIT: 创建/更新实体
 │   │           ├── get_updates.rs # GET_UPDATES: 按版本查询
-│   │           ├── init.rs      # 用户初始化（Nigori + 永久书签文件夹）
-│   │           └── users.rs     # GET / 用户列表页
+│   │           └── init.rs      # 用户初始化（Nigori + 永久书签文件夹）
 │   └── nigori/          # Nigori 加密库
 │       └── src/
 │           ├── lib.rs       # Nigori: encrypt/decrypt/get_key_name

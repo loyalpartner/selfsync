@@ -14,8 +14,9 @@ COPY --from=builder /src/target/release/selfsync-server /usr/local/bin/
 
 ENV SELFSYNC_DB=/data/selfsync.db
 ENV SELFSYNC_ADDR=0.0.0.0:8080
+ENV SELFSYNC_ADMIN_ADDR=0.0.0.0:8081
 
 VOLUME /data
-EXPOSE 8080
+EXPOSE 8080 8081
 
 ENTRYPOINT ["selfsync-server"]
