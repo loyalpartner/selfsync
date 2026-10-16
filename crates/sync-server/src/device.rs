@@ -8,14 +8,19 @@
 //! switch off they are recorded and approved automatically, so turning it on
 //! later does not lock out devices already in use.
 //!
+//! Pending and blocklisted devices are refused without touching the database,
+//! and once approved plus pending devices reach the admin-set limit, unknown
+//! installs are refused without being recorded. Either way an unapproved
+//! client can't make the server write.
+//!
 //! See `docs/device-approval.md` for the design.
 
 use std::net::SocketAddr;
 
 use axum::http::HeaderMap;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-    sea_query::OnConflict,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    Set, sea_query::OnConflict,
 };
 
 use crate::auth::ClientIdentity;
@@ -23,7 +28,19 @@ use crate::db::entity::{device, setting};
 use crate::util::now_millis;
 
 const SETTING_DEVICE_APPROVAL: &str = "device_approval";
+const SETTING_DEVICE_LIMIT: &str = "device_limit";
 const MAX_USER_AGENT_LEN: usize = 256;
+/// Chromium's cache GUID is 16 random bytes in base64 (24 chars); leave room
+/// for other Chromium-based clients without letting a request store an
+/// arbitrarily long id.
+const MAX_CACHE_GUID_LEN: usize = 64;
+/// RFC 5321 limit on a mailbox.
+const MAX_EMAIL_LEN: usize = 254;
+
+/// Default cap on approved plus pending devices.
+pub const DEFAULT_DEVICE_LIMIT: u64 = 20;
+/// Range the admin page accepts for the cap.
+pub const DEVICE_LIMIT_RANGE: std::ops::RangeInclusive<u64> = 1..=1000;
 
 /// Device metadata taken from the HTTP layer of a sync request.
 #[derive(Debug, Clone, Default)]
@@ -80,37 +97,41 @@ pub enum Admission {
     Deny,
 }
 
-/// What to do with a request, given the device's stored status (if any) and
-/// whether approval is required. `store` is the status to persist; `None`
-/// means leave the row alone (or create none).
+/// What to do with a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Decision {
-    admission: Admission,
-    store: Option<device::Status>,
+enum Action {
+    /// Known approved device: let it through and refresh its row.
+    Allow,
+    /// Refuse without writing anything.
+    Deny,
+    /// New device: insert a row with this status. `Approved` lets the
+    /// request through, `Pending` refuses it.
+    Record(device::Status),
 }
 
-fn decide(existing: Option<device::Status>, approval_required: bool) -> Decision {
+/// `at_limit`: approved plus pending devices have reached the cap. Only
+/// consulted for devices without a row.
+fn decide(existing: Option<device::Status>, approval_required: bool, at_limit: bool) -> Action {
     use device::Status::*;
-    match (existing, approval_required) {
-        (Some(Approved), _) => Decision {
-            admission: Admission::Allow,
-            store: None,
-        },
-        (Some(Rejected), _) => Decision {
-            admission: Admission::Deny,
-            store: None,
-        },
-        // A device left pending when the switch was turned off is let in on
-        // its next attempt, as the admin page promises.
-        (Some(Pending) | None, false) => Decision {
-            admission: Admission::Allow,
-            store: Some(Approved),
-        },
-        (Some(Pending) | None, true) => Decision {
-            admission: Admission::Deny,
-            store: Some(Pending),
-        },
+    match existing {
+        Some(Approved) => Action::Allow,
+        // Pending stays pending until the admin acts, even if the switch is
+        // turned off meanwhile.
+        Some(Pending | Rejected) => Action::Deny,
+        None if at_limit => Action::Deny,
+        None if approval_required => Action::Record(Pending),
+        None => Action::Record(Approved),
     }
+}
+
+/// A client id or email no Chromium-based browser would send. Refused
+/// before anything is written.
+fn malformed(identity: &ClientIdentity, cache_guid: &str) -> bool {
+    let guid_ok = cache_guid.len() <= MAX_CACHE_GUID_LEN
+        && cache_guid
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+/=-_".contains(&b));
+    !guid_ok || identity.email.len() > MAX_EMAIL_LEN
 }
 
 /// Decide whether a sync request may proceed, recording the device as a
@@ -131,27 +152,29 @@ pub async fn admit(
             Admission::Allow
         });
     };
+    if malformed(identity, cache_guid) {
+        return Ok(Admission::Deny);
+    }
 
     let now = now_millis();
     let existing = find(db, cache_guid, identity).await?;
-    let decision = decide(
+    let at_limit = existing.is_none() && active_count(db).await? >= device_limit(db).await?;
+    let action = decide(
         existing.as_ref().map(device::Model::status),
         approval_required,
+        at_limit,
     );
 
-    match existing {
-        Some(row) => {
+    match (action, existing) {
+        (Action::Allow, Some(row)) => {
             let mut active: device::ActiveModel = row.into();
-            if let Some(status) = decision.store {
-                active.status = Set(status.as_db_str().to_string());
-            }
             active.user_agent = Set(req.user_agent.clone());
             active.remote_addr = Set(req.remote_addr.clone());
             active.last_seen = Set(now);
             active.update(db).await?;
+            Ok(Admission::Allow)
         }
-        None => {
-            let status = decision.store.unwrap_or(device::Status::Pending);
+        (Action::Record(status), None) => {
             let row = device::ActiveModel {
                 cache_guid: Set(cache_guid.to_string()),
                 email: Set(identity.email.clone()),
@@ -177,18 +200,29 @@ pub async fn admit(
                 )
                 .exec_without_returning(db)
                 .await?;
-            if status == device::Status::Pending {
-                tracing::info!(
+            if status == device::Status::Approved {
+                return Ok(Admission::Allow);
+            }
+            tracing::info!(
+                email = %identity.email,
+                browser = %identity.browser,
+                cache_guid,
+                "new device waiting for approval"
+            );
+            Ok(Admission::Deny)
+        }
+        // Deny, or a stale pairing from a concurrent admin change: refuse.
+        _ => {
+            if at_limit {
+                tracing::warn!(
                     email = %identity.email,
-                    browser = %identity.browser,
                     cache_guid,
-                    "new device waiting for approval"
+                    "device limit reached, new device refused"
                 );
             }
+            Ok(Admission::Deny)
         }
     }
-
-    Ok(decision.admission)
 }
 
 async fn find(
@@ -243,6 +277,61 @@ pub async fn set_status(
     Ok(Some(active.update(db).await?))
 }
 
+/// Cap on approved plus pending devices. Unknown devices beyond it are
+/// refused without being recorded.
+pub async fn device_limit(db: &DatabaseConnection) -> anyhow::Result<u64> {
+    let row = setting::Entity::find_by_id(SETTING_DEVICE_LIMIT)
+        .one(db)
+        .await?;
+    Ok(row
+        .and_then(|r| r.value.parse().ok())
+        .unwrap_or(DEFAULT_DEVICE_LIMIT))
+}
+
+pub async fn set_device_limit(db: &DatabaseConnection, limit: u64) -> anyhow::Result<()> {
+    let row = setting::ActiveModel {
+        key: Set(SETTING_DEVICE_LIMIT.to_string()),
+        value: Set(limit.to_string()),
+    };
+    setting::Entity::insert(row)
+        .on_conflict(
+            OnConflict::column(setting::Column::Key)
+                .update_column(setting::Column::Value)
+                .to_owned(),
+        )
+        .exec_without_returning(db)
+        .await?;
+    Ok(())
+}
+
+/// Approved plus pending devices; what [`device_limit`] caps. Blocklisted
+/// rows don't count, so blocking junk frees room.
+async fn active_count(db: &DatabaseConnection) -> anyhow::Result<u64> {
+    Ok(device::Entity::find()
+        .filter(device::Column::Status.ne(device::Status::Rejected.as_db_str()))
+        .count(db)
+        .await?)
+}
+
+/// Forget a device; its next request is handled as a new device. Returns
+/// the deleted row, or `None` when the id does not exist.
+pub async fn delete(db: &DatabaseConnection, id: i32) -> anyhow::Result<Option<device::Model>> {
+    let Some(row) = device::Entity::find_by_id(id).one(db).await? else {
+        return Ok(None);
+    };
+    device::Entity::delete_by_id(id).exec(db).await?;
+    Ok(Some(row))
+}
+
+/// Forget every pending device. Returns how many were removed.
+pub async fn clear_pending(db: &DatabaseConnection) -> anyhow::Result<u64> {
+    let res = device::Entity::delete_many()
+        .filter(device::Column::Status.eq(device::Status::Pending.as_db_str()))
+        .exec(db)
+        .await?;
+    Ok(res.rows_affected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,22 +340,32 @@ mod tests {
 
     #[test]
     fn decide_matrix() {
-        let allow = |store| Decision {
-            admission: Admission::Allow,
-            store,
+        use Action::*;
+        for switch in [false, true] {
+            for limit in [false, true] {
+                assert_eq!(decide(Some(Approved), switch, limit), Allow);
+                assert_eq!(decide(Some(Pending), switch, limit), Deny);
+                assert_eq!(decide(Some(Rejected), switch, limit), Deny);
+                assert_eq!(decide(None, switch, true), Deny);
+            }
+        }
+        assert_eq!(decide(None, false, false), Record(Approved));
+        assert_eq!(decide(None, true, false), Record(Pending));
+    }
+
+    #[test]
+    fn malformed_ids_and_emails() {
+        let me = alice();
+        assert!(!malformed(&me, "Qm9yQ2FjaGVHdWlkMTIzNA=="));
+        assert!(!malformed(&me, "dev-a_b"));
+        assert!(malformed(&me, &"a".repeat(MAX_CACHE_GUID_LEN + 1)));
+        assert!(malformed(&me, "has space"));
+        assert!(malformed(&me, "<script>"));
+        let long = ClientIdentity {
+            email: format!("{}@example.com", "a".repeat(MAX_EMAIL_LEN)),
+            browser: BrowserKind::Chromium,
         };
-        let deny = |store| Decision {
-            admission: Admission::Deny,
-            store,
-        };
-        assert_eq!(decide(Some(Approved), true), allow(None));
-        assert_eq!(decide(Some(Approved), false), allow(None));
-        assert_eq!(decide(Some(Rejected), true), deny(None));
-        assert_eq!(decide(Some(Rejected), false), deny(None));
-        assert_eq!(decide(Some(Pending), true), deny(Some(Pending)));
-        assert_eq!(decide(Some(Pending), false), allow(Some(Approved)));
-        assert_eq!(decide(None, true), deny(Some(Pending)));
-        assert_eq!(decide(None, false), allow(Some(Approved)));
+        assert!(malformed(&long, "dev-a"));
     }
 
     #[test]
@@ -341,7 +440,7 @@ mod tests {
             Admission::Allow
         );
 
-        // Revoke: denied even after the switch is turned off again.
+        // Blocklist: denied even after the switch is turned off again.
         set_status(&db, b.id, Rejected).await.unwrap();
         set_approval_required(&db, false).await.unwrap();
         assert_eq!(
@@ -358,5 +457,89 @@ mod tests {
         assert_eq!(admit(&db, &me, &anon).await.unwrap(), Admission::Allow);
         set_approval_required(&db, true).await.unwrap();
         assert_eq!(admit(&db, &me, &anon).await.unwrap(), Admission::Deny);
+    }
+
+    async fn device_count(db: &DatabaseConnection) -> u64 {
+        device::Entity::find().count(db).await.unwrap()
+    }
+
+    async fn last_seen(db: &DatabaseConnection, guid: &str) -> i64 {
+        find(db, guid, &alice()).await.unwrap().unwrap().last_seen
+    }
+
+    #[tokio::test]
+    async fn pending_stays_pending_and_untouched() {
+        let db = test_db().await;
+        let me = alice();
+        set_approval_required(&db, true).await.unwrap();
+        admit(&db, &me, &from("dev-a")).await.unwrap();
+        let seen = last_seen(&db, "dev-a").await;
+
+        // Turning the switch off doesn't let a pending device in.
+        set_approval_required(&db, false).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        assert_eq!(
+            admit(&db, &me, &from("dev-a")).await.unwrap(),
+            Admission::Deny
+        );
+        assert_eq!(last_seen(&db, "dev-a").await, seen);
+        let a = find(&db, "dev-a", &me).await.unwrap().unwrap();
+        assert_eq!(a.status(), Pending);
+    }
+
+    #[tokio::test]
+    async fn limit_refuses_unknown_devices_without_recording() {
+        let db = test_db().await;
+        let me = alice();
+        set_device_limit(&db, 2).await.unwrap();
+        assert_eq!(device_limit(&db).await.unwrap(), 2);
+
+        for guid in ["dev-a", "dev-b"] {
+            assert_eq!(
+                admit(&db, &me, &from(guid)).await.unwrap(),
+                Admission::Allow
+            );
+        }
+        assert_eq!(
+            admit(&db, &me, &from("dev-c")).await.unwrap(),
+            Admission::Deny
+        );
+        assert_eq!(device_count(&db).await, 2);
+        // Known devices are unaffected.
+        assert_eq!(
+            admit(&db, &me, &from("dev-a")).await.unwrap(),
+            Admission::Allow
+        );
+
+        // Blocklisting one frees a slot.
+        let b = find(&db, "dev-b", &me).await.unwrap().unwrap();
+        set_status(&db, b.id, Rejected).await.unwrap();
+        assert_eq!(
+            admit(&db, &me, &from("dev-c")).await.unwrap(),
+            Admission::Allow
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_requests_are_refused_without_recording() {
+        let db = test_db().await;
+        let long = from(&"a".repeat(MAX_CACHE_GUID_LEN + 1));
+        assert_eq!(admit(&db, &alice(), &long).await.unwrap(), Admission::Deny);
+        assert_eq!(device_count(&db).await, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_and_clear_pending() {
+        let db = test_db().await;
+        let me = alice();
+        set_approval_required(&db, true).await.unwrap();
+        for guid in ["dev-a", "dev-b", "dev-c"] {
+            admit(&db, &me, &from(guid)).await.unwrap();
+        }
+        let a = find(&db, "dev-a", &me).await.unwrap().unwrap();
+        assert!(delete(&db, a.id).await.unwrap().is_some());
+        assert!(delete(&db, a.id).await.unwrap().is_none());
+        assert_eq!(clear_pending(&db).await.unwrap(), 2);
+        assert_eq!(device_count(&db).await, 0);
     }
 }

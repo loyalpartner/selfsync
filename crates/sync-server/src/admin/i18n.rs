@@ -84,13 +84,18 @@ pub struct Texts {
     pub status_on: &'static str,
     pub status_off: &'static str,
 
+    pub limit_title: &'static str,
+    pub limit_desc: &'static str,
+    pub limit_usage: &'static str,
+    pub save: &'static str,
+    pub limit_reached: &'static str,
+
     pub pending_title: &'static str,
     pub pending_hint: &'static str,
-    pub off_note: &'static str,
     pub no_pending: &'static str,
+    pub clear_pending: &'static str,
     pub ip: &'static str,
     pub first_seen: &'static str,
-    pub last_attempt: &'static str,
     pub device_id: &'static str,
 
     pub approved_title: &'static str,
@@ -104,8 +109,8 @@ pub struct Texts {
     pub name_after_sync: &'static str,
 
     pub approve: &'static str,
-    pub reject: &'static str,
-    pub revoke: &'static str,
+    pub block: &'static str,
+    pub unblock: &'static str,
     pub re_approve: &'static str,
 
     pub users_title: &'static str,
@@ -120,6 +125,9 @@ pub struct Texts {
     pub done_rejected: &'static str,
     pub done_on: &'static str,
     pub done_off: &'static str,
+    pub done_limit: &'static str,
+    pub done_deleted: &'static str,
+    pub resume_hint: &'static str,
 }
 
 impl Texts {
@@ -137,6 +145,15 @@ impl Texts {
             "zh-CN" => format!("{n} {zh}"),
             _ if n == 1 && en == "days ago" => "1 day ago".to_string(),
             _ => format!("{n} {en}"),
+        }
+    }
+
+    /// Flash after clearing pending devices.
+    pub fn cleared(&self, n: u64) -> String {
+        match (self.html_lang, n) {
+            ("zh-CN", _) => format!("已清空 {n} 台待审核设备"),
+            (_, 1) => "Cleared 1 pending device".to_string(),
+            _ => format!("Cleared {n} pending devices"),
         }
     }
 
@@ -159,22 +176,27 @@ pub const ZH: Texts = Texts {
     language: "界面语言",
 
     approval_title: "新设备需要审核",
-    approval_desc: "打开后，没批准过的浏览器无法同步，会出现在下方「待审核」里，等你批准。关闭时，新设备连上来会自动批准。",
+    approval_desc: "打开后，没批准过的浏览器无法同步，会出现在下方「待审核」里，等你批准。关闭时，新设备连上来会自动批准。已经在待审核里的设备不受开关影响，仍要你来处理。",
     status_on: "已开启 · 新设备批准后才能同步",
     status_off: "已关闭 · 新设备自动批准",
 
+    limit_title: "设备数量上限",
+    limit_desc: "已批准和待审核的设备加起来达到上限后，新设备直接拒绝，不记录、不出现在待审核里。黑名单不占名额。",
+    limit_usage: "当前",
+    save: "保存",
+    limit_reached: "已达上限：新设备会被直接拒绝。要加设备，先调高上限，或把不用的设备加入黑名单。",
+
     pending_title: "待审核",
     pending_hint: "批准后，浏览器下次重试时自动恢复同步，一般几分钟内，不用重启浏览器。",
-    off_note: "审核已关闭：下面这些设备下次连接时会被自动批准。",
     no_pending: "没有待审核的设备。",
+    clear_pending: "全部清空",
     ip: "来源 IP",
     first_seen: "首次出现",
-    last_attempt: "最近一次尝试",
     device_id: "设备 ID",
 
     approved_title: "已批准设备",
-    rejected_title: "已拒绝",
-    rejected_hint: "这些设备会一直被拒绝，开关关闭也不会放行。",
+    rejected_title: "黑名单",
+    rejected_hint: "这些设备的请求一律拒绝。「改为批准」直接放行；「移出黑名单」删除记录，下次连上来按新设备处理。",
     no_approved: "还没有已批准的设备。",
     col_device: "设备",
     col_account: "账号",
@@ -183,8 +205,8 @@ pub const ZH: Texts = Texts {
     name_after_sync: "设备名在首次同步后显示",
 
     approve: "批准",
-    reject: "拒绝",
-    revoke: "撤销",
+    block: "加入黑名单",
+    unblock: "移出黑名单",
     re_approve: "改为批准",
 
     users_title: "账号",
@@ -196,9 +218,12 @@ pub const ZH: Texts = Texts {
     footer: "设备 ID 由浏览器自己生成。在浏览器里退出账号、关掉再打开同步、或换一个浏览器配置文件后，设备 ID 会变，同一台电脑会以新设备的身份重新出现在「待审核」里。",
 
     done_approved: "已批准",
-    done_rejected: "已拒绝",
+    done_rejected: "已加入黑名单",
     done_on: "审核已打开，新设备需要批准",
     done_off: "审核已关闭，新设备会自动批准",
+    done_limit: "设备数量上限已保存",
+    done_deleted: "已移出黑名单",
+    resume_hint: "浏览器会在下次重试时自动恢复同步，一般几分钟内。想马上恢复：重启浏览器，或打开 chrome://sync-internals（Edge 是 edge://sync-internals）点「Trigger GetUpdates」。不要关掉再打开同步，那样设备 ID 会变，要重新审批。",
 };
 
 pub const EN: Texts = Texts {
@@ -211,22 +236,27 @@ pub const EN: Texts = Texts {
     language: "Language",
 
     approval_title: "Require approval for new devices",
-    approval_desc: "When on, browsers you haven't approved can't sync. They show up under Pending below until you approve them. When off, new devices are approved automatically.",
+    approval_desc: "When on, browsers you haven't approved can't sync. They show up under Pending below until you approve them. When off, new devices are approved automatically. Devices already pending are not affected by this switch; they wait for you either way.",
     status_on: "On · new devices sync only after approval",
     status_off: "Off · new devices are approved automatically",
 
+    limit_title: "Device limit",
+    limit_desc: "Once approved and pending devices reach the limit, new devices are refused outright: not recorded, not listed as pending. Blocked devices don't count.",
+    limit_usage: "In use",
+    save: "Save",
+    limit_reached: "Limit reached: new devices are refused. To add one, raise the limit or block a device you no longer use.",
+
     pending_title: "Pending",
     pending_hint: "Once approved, the browser resumes on its next retry, usually within a few minutes. No restart needed.",
-    off_note: "Approval is off: these devices will be approved the next time they connect.",
     no_pending: "No devices waiting for approval.",
+    clear_pending: "Clear all",
     ip: "IP",
     first_seen: "First seen",
-    last_attempt: "Last attempt",
     device_id: "Device ID",
 
     approved_title: "Approved devices",
-    rejected_title: "Rejected",
-    rejected_hint: "These devices stay blocked, even when approval is turned off.",
+    rejected_title: "Blocked",
+    rejected_hint: "Every request from these devices is refused. Approve lets one back in; Unblock forgets it, so its next request is handled as a new device.",
     no_approved: "No approved devices yet.",
     col_device: "Device",
     col_account: "Account",
@@ -235,8 +265,8 @@ pub const EN: Texts = Texts {
     name_after_sync: "Device name appears after its first sync",
 
     approve: "Approve",
-    reject: "Reject",
-    revoke: "Revoke",
+    block: "Block",
+    unblock: "Unblock",
     re_approve: "Approve",
 
     users_title: "Accounts",
@@ -248,9 +278,12 @@ pub const EN: Texts = Texts {
     footer: "Device IDs are generated by the browser. Signing out, turning sync off and on, or switching browser profiles gives the same computer a new ID, and it shows up under Pending again.",
 
     done_approved: "Approved",
-    done_rejected: "Rejected",
+    done_rejected: "Blocked",
     done_on: "Approval is on; new devices need approval",
     done_off: "Approval is off; new devices are approved automatically",
+    done_limit: "Device limit saved",
+    done_deleted: "Unblocked",
+    resume_hint: "The browser resumes on its next retry, usually within a few minutes. To resume now, restart the browser, or open chrome://sync-internals (edge://sync-internals in Edge) and click Trigger GetUpdates. Don't turn sync off and on: that changes the device ID and it needs approval again.",
 };
 
 #[cfg(test)]

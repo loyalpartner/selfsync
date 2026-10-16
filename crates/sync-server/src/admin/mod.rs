@@ -24,7 +24,10 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, 
 use serde::Deserialize;
 
 use crate::db::entity::{device, sync_entity, user};
-use crate::device::{approval_required, set_approval_required, set_status};
+use crate::device::{
+    DEVICE_LIMIT_RANGE, approval_required, clear_pending, delete, device_limit,
+    set_approval_required, set_device_limit, set_status,
+};
 use crate::proto::sync_pb;
 use crate::util::now_millis;
 use i18n::{LANG_COOKIE, Lang, Texts};
@@ -45,8 +48,11 @@ pub fn router(db: DatabaseConnection, config: AdminConfig) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/settings/device-approval", post(toggle_approval))
+        .route("/settings/device-limit", post(update_limit))
+        .route("/devices/clear-pending", post(clear_pending_devices))
         .route("/devices/{id}/approve", post(approve))
         .route("/devices/{id}/reject", post(reject))
+        .route("/devices/{id}/delete", post(delete_device))
         .layer(middleware::from_fn(check_request))
         .layer(Extension(db))
         .layer(Extension(config))
@@ -112,6 +118,7 @@ struct IndexParams {
     lang: Option<String>,
     done: Option<String>,
     device: Option<i32>,
+    n: Option<u64>,
 }
 
 struct DeviceRow {
@@ -138,9 +145,16 @@ struct AdminPage {
     t: &'static Texts,
     lang: &'static str,
     approval_on: bool,
+    device_limit: u64,
+    /// Approved plus pending: what the limit counts.
+    active_devices: usize,
+    limit_min: u64,
+    limit_max: u64,
     admin_addr: String,
     loopback: bool,
     flash: Option<String>,
+    /// Shown under the flash after an approval.
+    resume_hint: bool,
     pending: Vec<DeviceRow>,
     approved: Vec<DeviceRow>,
     rejected: Vec<DeviceRow>,
@@ -186,6 +200,7 @@ async fn render_index(
     let t = lang.texts();
     let now = now_millis();
     let approval_on = approval_required(db).await?;
+    let limit = device_limit(db).await?;
     let devices = device::Entity::find()
         .order_by(device::Column::LastSeen, Order::Desc)
         .all(db)
@@ -241,14 +256,20 @@ async fn render_index(
         .collect();
 
     let flash = flash_message(t, params, &devices, &names);
+    let resume_hint = flash.is_some() && params.done.as_deref() == Some("approved");
 
     let page = AdminPage {
         t,
         lang: lang.code(),
         approval_on,
+        device_limit: limit,
+        active_devices: pending.len() + approved.len(),
+        limit_min: *DEVICE_LIMIT_RANGE.start(),
+        limit_max: *DEVICE_LIMIT_RANGE.end(),
         admin_addr: config.addr.clone(),
         loopback: config.loopback,
         flash,
+        resume_hint,
         pending,
         approved,
         rejected,
@@ -277,6 +298,9 @@ fn flash_message(
         "rejected" => described(t.done_rejected),
         "on" => Some(t.done_on.to_string()),
         "off" => Some(t.done_off.to_string()),
+        "limit" => Some(t.done_limit.to_string()),
+        "deleted" => Some(t.done_deleted.to_string()),
+        "cleared" => Some(t.cleared(params.n.unwrap_or(0))),
         _ => None,
     }
 }
@@ -324,6 +348,66 @@ async fn toggle_approval(
         }
         Err(e) => {
             tracing::error!("toggle device approval failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct LimitForm {
+    limit: String,
+}
+
+async fn update_limit(
+    Extension(db): Extension<DatabaseConnection>,
+    Form(form): Form<LimitForm>,
+) -> Response {
+    let Some(limit) = form
+        .limit
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|n| DEVICE_LIMIT_RANGE.contains(n))
+    else {
+        return (StatusCode::BAD_REQUEST, "device limit out of range").into_response();
+    };
+    match set_device_limit(&db, limit).await {
+        Ok(()) => {
+            tracing::info!(limit, "device limit changed");
+            Redirect::to("/?done=limit").into_response()
+        }
+        Err(e) => {
+            tracing::error!("set device limit failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
+        }
+    }
+}
+
+async fn delete_device(
+    Extension(db): Extension<DatabaseConnection>,
+    Path(id): Path<i32>,
+) -> Response {
+    match delete(&db, id).await {
+        Ok(Some(d)) => {
+            tracing::info!(id, email = %d.email, cache_guid = %d.cache_guid, "device deleted");
+            Redirect::to("/?done=deleted").into_response()
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, "no such device").into_response(),
+        Err(e) => {
+            tracing::error!(id, "device delete failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
+        }
+    }
+}
+
+async fn clear_pending_devices(Extension(db): Extension<DatabaseConnection>) -> Response {
+    match clear_pending(&db).await {
+        Ok(n) => {
+            tracing::info!(n, "pending devices cleared");
+            Redirect::to(&format!("/?done=cleared&n={n}")).into_response()
+        }
+        Err(e) => {
+            tracing::error!("clear pending devices failed: {e}");
             (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
         }
     }
