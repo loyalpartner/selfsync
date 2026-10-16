@@ -97,7 +97,7 @@ In the Docker image the defaults are overridden to `0.0.0.0:8080`, `0.0.0.0:8081
 
 The admin page runs on its own port, `SELFSYNC_ADMIN_ADDR` (default `127.0.0.1:8081`, this machine only). It lists accounts and devices, in English or Chinese.
 
-Turn on **Require approval for new devices** and any browser you haven't approved is refused until you click **Approve**; it then resumes on its next retry, no restart needed. Devices already in use when you turn it on keep working. See [docs/device-approval.md](docs/device-approval.md).
+Turn on **Require approval for new devices** and any browser you haven't approved is refused until you click **Approve**; it then resumes on its next retry, no restart needed. Devices already in use when you turn it on keep working. Pending and blocked devices are refused without the server writing anything, and once approved plus pending devices reach the **Device limit** (default 20), new devices are refused without being recorded. See [docs/device-approval.md](docs/device-approval.md).
 
 The sync port has no authentication, so never expose the admin port the same way. To reach it remotely, put it behind a reverse proxy that authenticates you.
 

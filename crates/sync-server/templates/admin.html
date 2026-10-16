@@ -36,6 +36,13 @@ p{margin:0}
 .switch span{display:block;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
 .switch[aria-checked=true] span{transform:translateX(28px)}
 .flash{margin:-8px 0 0;font-size:14px;color:var(--ok-fg)}
+.flash+.hint{margin-top:-18px;max-width:760px}
+.limit{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;padding:20px 24px}
+.limit>div{flex:1 1 420px;min-width:0}
+.limit form{display:flex;align-items:center;gap:10px}
+.limit input{width:96px;height:44px;padding:0 12px;border:1px solid var(--btn-line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+.usage{margin-top:8px;font-size:14px;color:var(--muted)}
+.usage.full{color:var(--warn-fg)}
 .head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line)}
 .head>div{display:flex;align-items:center;gap:10px}
 .hint{font-size:13px;color:var(--muted)}
@@ -68,6 +75,7 @@ td{padding:12px 20px;border-bottom:1px solid var(--line-soft);vertical-align:mid
 tr:last-child td{border-bottom:0}
 td.dim{color:var(--muted);white-space:nowrap}
 td.act{text-align:right}
+td.act .actions{justify-content:flex-end}
 td:first-child{min-width:220px}
 .sub{font-size:13px;color:var(--muted)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -102,14 +110,27 @@ td:first-child{min-width:220px}
 </form>
 </section>
 
-{% if let Some(msg) = flash %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
+<section class="card limit" aria-labelledby="limit-title">
+<div>
+<h2 id="limit-title">{{ t.limit_title }}</h2>
+<p class="desc">{{ t.limit_desc }}</p>
+<p class="usage{% if active_devices >= device_limit as usize %} full{% endif %}">{{ t.limit_usage }} <span class="mono">{{ active_devices }} / {{ device_limit }}</span></p>
+</div>
+<form method="post" action="/settings/device-limit">
+<label class="sr" for="limit-input">{{ t.limit_title }}</label>
+<input id="limit-input" class="mono" type="number" name="limit" min="{{ limit_min }}" max="{{ limit_max }}" value="{{ device_limit }}" required>
+<button type="submit" class="btn">{{ t.save }}</button>
+</form>
+</section>
+
+{% if let Some(msg) = flash %}<p class="flash" role="status">{{ msg }}</p>{% if resume_hint %}<p class="hint">{{ t.resume_hint }}</p>{% endif %}{% endif %}
 
 <section class="card" aria-labelledby="pending-title">
 <div class="head">
 <div><h2 id="pending-title">{{ t.pending_title }}</h2><span class="count warn">{{ pending.len() }}</span></div>
-<span class="hint">{{ t.pending_hint }}</span>
+<div><span class="hint">{{ t.pending_hint }}</span>{% if !pending.is_empty() %}<form method="post" action="/devices/clear-pending"><button type="submit" class="btn small">{{ t.clear_pending }}</button></form>{% endif %}</div>
 </div>
-{% if !approval_on && !pending.is_empty() %}<div class="note">{{ t.off_note }}</div>{% endif %}
+{% if active_devices >= device_limit as usize %}<div class="note">{{ t.limit_reached }}</div>{% endif %}
 {% for d in pending %}
 <div class="pending">
 <div class="info">
@@ -117,12 +138,11 @@ td:first-child{min-width:220px}
 <div class="facts">
 <span>{{ t.ip }} <span class="mono">{{ d.ip }}</span></span>
 <span>{{ t.first_seen }} <span>{{ d.first_seen }}</span></span>
-<span>{{ t.last_attempt }} <span>{{ d.last_seen }}</span></span>
 <span>{{ t.device_id }} <span class="mono">{{ d.guid }}</span></span>
 </div>
 </div>
 <div class="actions">
-<form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn">{{ t.reject }}</button></form>
+<form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn danger">{{ t.block }}</button></form>
 <form method="post" action="/devices/{{ d.id }}/approve"><button type="submit" class="btn primary">{{ t.approve }}</button></form>
 </div>
 </div>
@@ -147,7 +167,7 @@ td:first-child{min-width:220px}
 <td class="mono">{{ d.ip }}</td>
 <td class="dim">{{ d.first_seen }}</td>
 <td class="dim">{{ d.last_seen }}</td>
-<td class="act"><form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn small danger" aria-label="{{ t.revoke }} {{ d.title }}">{{ t.revoke }}</button></form></td>
+<td class="act"><form method="post" action="/devices/{{ d.id }}/reject"><button type="submit" class="btn small danger" aria-label="{{ t.block }} {{ d.title }}">{{ t.block }}</button></form></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -164,7 +184,7 @@ td:first-child{min-width:220px}
 </div>
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">{{ t.col_device }}</th><th scope="col">{{ t.col_account }}</th><th scope="col">{{ t.ip }}</th><th scope="col">{{ t.first_seen }}</th><th scope="col">{{ t.last_attempt }}</th><th scope="col"><span class="sr">{{ t.col_actions }}</span></th></tr></thead>
+<thead><tr><th scope="col">{{ t.col_device }}</th><th scope="col">{{ t.col_account }}</th><th scope="col">{{ t.ip }}</th><th scope="col">{{ t.first_seen }}</th><th scope="col">{{ t.col_last_sync }}</th><th scope="col"><span class="sr">{{ t.col_actions }}</span></th></tr></thead>
 <tbody>
 {% for d in rejected %}
 <tr>
@@ -173,7 +193,7 @@ td:first-child{min-width:220px}
 <td class="mono">{{ d.ip }}</td>
 <td class="dim">{{ d.first_seen }}</td>
 <td class="dim">{{ d.last_seen }}</td>
-<td class="act"><form method="post" action="/devices/{{ d.id }}/approve"><button type="submit" class="btn small" aria-label="{{ t.re_approve }} {{ d.title }}">{{ t.re_approve }}</button></form></td>
+<td class="act"><div class="actions"><form method="post" action="/devices/{{ d.id }}/delete"><button type="submit" class="btn small" aria-label="{{ t.unblock }} {{ d.title }}">{{ t.unblock }}</button></form><form method="post" action="/devices/{{ d.id }}/approve"><button type="submit" class="btn small" aria-label="{{ t.re_approve }} {{ d.title }}">{{ t.re_approve }}</button></form></div></td>
 </tr>
 {% endfor %}
 </tbody>
