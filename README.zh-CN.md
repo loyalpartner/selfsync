@@ -88,6 +88,8 @@ adb shell am force-stop com.android.chrome
 | `SELFSYNC_ADDR` | `127.0.0.1:8080` | 监听地址 |
 | `SELFSYNC_ADMIN_ADDR` | `127.0.0.1:8081` | 管理页监听地址 |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite 数据库路径 |
+| `SELFSYNC_ADMIN_DEVICE_LIMIT` | 未设置（20） | 设备数量上限，1–1000。设置后每次启动都会覆盖管理页的值 |
+| `SELFSYNC_ADMIN_DEVICE_APPROVAL` | 未设置（0） | `1` 开启新设备审核，`0` 关闭。设置后每次启动都会覆盖管理页的值 |
 | `RUST_LOG` | `selfsync_server=info,http=info` | 日志过滤（tracing-subscriber 语法） |
 <!-- /AUTO-GENERATED -->
 

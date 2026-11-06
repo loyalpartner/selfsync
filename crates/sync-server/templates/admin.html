@@ -21,7 +21,7 @@ header .wrap{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justif
 .langs a{display:flex;align-items:center;height:36px;padding:0 12px;color:var(--ink);text-decoration:none;font-size:13px}
 .langs a+a{border-left:1px solid var(--btn-line)}
 .langs a[aria-current]{background:var(--ink);color:var(--card)}
-main{display:flex;flex-direction:column;gap:24px;padding-top:28px;padding-bottom:72px}
+main.wrap{display:flex;flex-direction:column;gap:24px;padding-top:28px;padding-bottom:72px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .switch-card{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;padding:24px}
 .switch-card div{flex:1 1 420px;min-width:0}
@@ -85,7 +85,7 @@ td:first-child{min-width:220px}
 <body>
 <header>
 <div class="wrap">
-<div class="brand"><b class="mono">selfsync</b><span class="hint">{{ t.admin }}</span></div>
+<div class="brand"><b class="mono">selfsync</b><span class="hint">{{ t.admin }}</span><span class="hint mono">v{{ version }}</span></div>
 <div class="meta">
 <span>{{ t.admin_port }} <span class="mono addr">{{ admin_addr }}</span> · {% if loopback %}{{ t.local_only }}{% else %}{{ t.exposed }}{% endif %}</span>
 <nav class="langs" aria-label="{{ t.language }} / Language">
