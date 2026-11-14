@@ -88,6 +88,8 @@ Replace `<host>` with your selfsync host (LAN IP, NAS hostname, or Tailscale nam
 | `SELFSYNC_ADDR` | `127.0.0.1:8080` | TCP address to bind |
 | `SELFSYNC_ADMIN_ADDR` | `127.0.0.1:8081` | TCP address of the admin page |
 | `SELFSYNC_DB` | `selfsync.db` | SQLite database path |
+| `SELFSYNC_ADMIN_DEVICE_LIMIT` | unset (20) | Device cap, 1-1000. When set, overrides the admin page value on startup |
+| `SELFSYNC_ADMIN_DEVICE_APPROVAL` | unset (0) | `1` requires approval for new devices, `0` disables it. When set, overrides the admin page value on startup |
 | `RUST_LOG` | `selfsync_server=info,http=info` | Log filter (tracing-subscriber syntax) |
 <!-- /AUTO-GENERATED -->
 

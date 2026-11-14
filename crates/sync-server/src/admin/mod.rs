@@ -151,6 +151,7 @@ struct AdminPage {
     limit_min: u64,
     limit_max: u64,
     admin_addr: String,
+    version: &'static str,
     loopback: bool,
     flash: Option<String>,
     /// Shown under the flash after an approval.
@@ -267,6 +268,7 @@ async fn render_index(
         limit_min: *DEVICE_LIMIT_RANGE.start(),
         limit_max: *DEVICE_LIMIT_RANGE.end(),
         admin_addr: config.addr.clone(),
+        version: env!("CARGO_PKG_VERSION"),
         loopback: config.loopback,
         flash,
         resume_hint,

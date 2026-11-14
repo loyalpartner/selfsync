@@ -36,6 +36,22 @@ struct Cli {
     /// SQLite database path.
     #[arg(long, env = "SELFSYNC_DB", default_value = "selfsync.db")]
     db: String,
+
+    /// Device cap (1-1000). When set, overrides the admin page value on every start.
+    #[arg(
+        long,
+        env = "SELFSYNC_ADMIN_DEVICE_LIMIT",
+        value_parser = clap::value_parser!(u64).range(1..=1000)
+    )]
+    device_limit: Option<u64>,
+
+    /// 1 requires approval for new devices, 0 disables it. When set, overrides the admin page value on every start.
+    #[arg(
+        long,
+        env = "SELFSYNC_ADMIN_DEVICE_APPROVAL",
+        value_parser = clap::value_parser!(u8).range(0..=1)
+    )]
+    device_approval: Option<u8>,
 }
 
 #[tokio::main]
@@ -49,8 +65,25 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        "selfsync server starting"
+    );
+
     let db = db::connect(&cli.db).await?;
     tracing::info!(db_path = %cli.db, "database connected");
+
+    if let Some(limit) = cli.device_limit {
+        device::set_device_limit(&db, limit).await?;
+        tracing::info!(limit, "device limit set from environment");
+    }
+    if let Some(approval) = cli.device_approval {
+        device::set_approval_required(&db, approval == 1).await?;
+        tracing::info!(
+            required = approval == 1,
+            "device approval set from environment"
+        );
+    }
 
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
